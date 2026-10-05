@@ -1,0 +1,1 @@
+"""SBoard domain services."""
