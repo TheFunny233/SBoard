@@ -55,6 +55,8 @@ npm run dev
 
 Docker 只部署中心面板 SBoard，SBoardNode 仍然使用纯 Alpine Linux 上的单二进制文件。
 
+服务器使用 1Panel 部署请直接阅读：[SBoard 在 1Panel 上用 Docker 部署](docs/1panel.md)。该方案通过 1Panel 网站反向代理提供公网 HTTPS 访问，后端端口不会暴露到公网。
+
 PowerShell：
 
 ```powershell
@@ -64,11 +66,46 @@ docker compose up -d --build
 
 启动后：
 
-- 管理界面：`http://127.0.0.1:8080`
+- 管理界面：`http://127.0.0.1:23456`
 - 后端 API：`http://127.0.0.1:8000`，仅绑定本机
 - SQLite：保存在 `sboard-data` Docker volume
 
 前端 Nginx 会同源代理 API 和订阅请求，并对含 Token 的 `/subscribe/` 路径关闭访问日志。
+
+### 1Panel 公网部署
+
+SBoard 可以直接作为 1Panel 的 Docker Compose 项目运行。建议使用域名访问，
+让 1Panel 的网站反向代理负责 HTTPS；不要把后端 `8000` 端口暴露到公网。
+
+1. 在服务器安全组/防火墙放行 `80`、`443`。当前 1Panel Compose 将前端绑定到服务器本机的 `127.0.0.1:23456`，不直接暴露管理页面。
+2. 1Panel -> **容器** -> **编排** -> **创建编排**，选择从 Git 或本地目录部署，使用仓库里的
+   `compose.1panel.yaml`（目录中同时保留 `backend/` 和 `frontend/`）。
+3. 在 Compose 文件同目录创建 `.env`，写入一个随机的 32 字符以上管理 Token：
+
+   ```dotenv
+   SBOARD_ADMIN_TOKEN=请替换为随机的长字符串
+   ```
+
+   可用 `openssl rand -hex 32` 生成。不要把 Token 提交到 Git 或写进镜像。
+4. 使用 `docker compose -f compose.1panel.yaml up -d --build` 启动。前端默认发布为
+   `127.0.0.1:23456 -> 80`，首次构建可能需要几分钟。
+5. 正式使用时，在 1Panel -> **网站** -> **创建网站** 中绑定域名，反向代理到
+   `http://127.0.0.1:23456`，申请并启用 Let's Encrypt 证书，然后通过 `https://你的域名` 访问。
+   面板中的“代理目录”保持 `/`，并开启 WebSocket（当前版本不依赖 WebSocket，但开启不会有坏处）。
+6. 打开“设置”页，粘贴同一个 `SBOARD_ADMIN_TOKEN`。节点的 `server_url` 应填写公网地址，
+   例如 `https://sboard.example.com`；订阅地址也使用该域名下的 `/subscribe/...` 路径。
+
+公网部署检查：
+
+```bash
+curl https://你的域名/health
+docker compose ps
+docker compose logs --tail=100 backend frontend
+```
+
+`/health` 返回 `{"status":"ok",...}` 才表示服务已就绪。SQLite 数据位于 Docker volume
+`sboard-data`，请在 1Panel 中为该 volume 配置定期备份。管理 Token 一旦泄露应立即在 `.env`
+中更换并重建容器；订阅 Token 则在“订阅”页单独轮换。
 
 ## API 范围
 

@@ -4,12 +4,12 @@ services:
     restart: unless-stopped
     environment:
       SBOARD_ENV: production
-      SBOARD_ADMIN_TOKEN: ${SBOARD_ADMIN_TOKEN:?set SBOARD_ADMIN_TOKEN}
+      SBOARD_ADMIN_TOKEN: ${SBOARD_ADMIN_TOKEN:?请在 1Panel 编排环境变量中设置 SBOARD_ADMIN_TOKEN}
       SBOARD_DATABASE_URL: sqlite:////app/data/sboard.db
-    ports:
-      - "127.0.0.1:8000:8000"
     volumes:
       - sboard-data:/app/data
+    expose:
+      - "8000"
     healthcheck:
       test:
         - CMD
@@ -30,7 +30,8 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "23456:80"
+      - "127.0.0.1:23456:80"
 
 volumes:
   sboard-data:
+    name: sboard-data
