@@ -1,6 +1,6 @@
 # SBoard 在 1Panel 上用 Docker 部署
 
-本文是在 Linux 服务器上操作，不依赖本地电脑。SBoard 面板本身是一个容器，内部同时运行前端 Nginx 和 FastAPI 后端；Watchtower 是可选的自动更新器。面板只绑定服务器本机的 127.0.0.1:23456，公网访问统一通过 1Panel 网站反向代理和 HTTPS。
+本文是在 Linux 服务器上操作，不依赖本地电脑。SBoard 面板只运行一个容器，内部同时运行前端 Nginx 和 FastAPI 后端。面板只绑定服务器本机的 127.0.0.1:23456，公网访问统一通过 1Panel 网站反向代理和 HTTPS。
 
 ## 1. 准备服务器
 
@@ -55,7 +55,7 @@
 
 curl 应返回包含 status 为 ok 的 JSON。日志命令：
 
-    docker compose -f compose.yaml logs --tail=200 sboard watchtower
+    docker compose -f compose.yaml logs --tail=200 sboard
 
 数据库保存在 Docker volume sboard-data 中。不要执行 docker compose down -v，否则会删除数据库。
 
@@ -94,15 +94,15 @@ curl 应返回包含 status 为 ok 的 JSON。日志命令：
     https://你的域名/subscribe/clash/<订阅Token>
     https://你的域名/subscribe/v2ray/<订阅Token>
 
-## 7. 自动更新、手动更新与备份
+## 7. 手动更新与备份
 
 仓库中的 `.github/workflows/publish-images.yml` 会在 `main` 分支每次推送后，把单容器镜像发布到 GitHub Packages：
 
     ghcr.io/thefunny233/sboard:latest
 
-首次发布后，请在 GitHub 仓库的「Packages」中将这个容器包设置为 Public，否则服务器无法匿名拉取。当前 Compose 按公开包设计；如果必须使用 Private 包，需要另外为 Watchtower 配置 GHCR 登录凭据。`watchtower` 容器每 5 分钟检查带有更新标签的 SBoard 服务，发现新镜像后会自动拉取、替换容器并保留 SQLite volume。
+首次发布后，请在 GitHub 仓库的「Packages」中将这个容器包设置为 Public，否则服务器无法匿名拉取。当前 Compose 按公开包设计；如果必须使用 Private 包，需要先在服务器执行 `docker login ghcr.io`。
 
-手动立即更新：
+更新镜像：
 
     cd /opt/sboard
     docker compose -f compose.yaml pull

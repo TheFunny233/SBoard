@@ -108,9 +108,9 @@ docker compose logs --tail=100 sboard
 中更换并重建容器；订阅 Token 则在“订阅”页单独轮换。
 
 镜像由 GitHub Actions 自动发布到 GitHub Packages（GHCR）。`main` 分支每次推送后会构建
-`sboard` 单容器镜像，服务器上的 Watchtower 每 5 分钟检查并自动重启到新镜像。
+`sboard` 单容器镜像。服务器不运行 Watchtower，更新由 1Panel 手动或计划任务控制。
 首次发布后，在 GitHub 仓库的 **Packages** 中将这个容器包设置为 Public；如果保持 Private，
-当前这份 1Panel Compose 无法匿名拉取，不能直接使用。私有包需要另外配置 Watchtower 的 GHCR 登录凭据。
+需要在服务器执行 `docker login ghcr.io` 后再拉取镜像。
 
 ## API 范围
 
