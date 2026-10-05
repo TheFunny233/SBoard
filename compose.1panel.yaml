@@ -1,7 +1,9 @@
 services:
   backend:
-    build: ./backend
+    image: ghcr.io/thefunny233/sboard-backend:latest
     restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     environment:
       SBOARD_ENV: production
       SBOARD_ADMIN_TOKEN: ${SBOARD_ADMIN_TOKEN:?请在 1Panel 编排环境变量中设置 SBOARD_ADMIN_TOKEN}
@@ -24,13 +26,22 @@ services:
       start_period: 10s
 
   frontend:
-    build: ./frontend
+    image: ghcr.io/thefunny233/sboard-frontend:latest
     restart: unless-stopped
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     depends_on:
       backend:
         condition: service_healthy
     ports:
       - "127.0.0.1:23456:80"
+
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    restart: unless-stopped
+    command: --label-enable --interval 300 --cleanup --rolling-restart
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   sboard-data:

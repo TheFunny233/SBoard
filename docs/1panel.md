@@ -43,14 +43,14 @@
 
 1. 名称：sboard。
 2. 编排路径：/opt/sboard。
-3. 编排文件：compose.1panel.yaml（仓库已提供）。
+3. 编排文件：compose.1panel.yaml（仓库已提供）。该文件使用 GitHub Packages（GHCR）镜像，不在服务器本地构建。
 4. 环境变量添加 SBOARD_ADMIN_TOKEN，值为上一步生成的随机字符串。
-5. 保存并启动。首次启动会构建镜像，可能需要几分钟。
+5. 保存并启动。首次启动会拉取镜像，可能需要几分钟。
 
 服务器终端也可执行：
 
     cd /opt/sboard
-    SBOARD_ADMIN_TOKEN='替换为你的随机字符串' docker compose -f compose.1panel.yaml up -d --build
+    SBOARD_ADMIN_TOKEN='替换为你的随机字符串' docker compose -f compose.1panel.yaml up -d
 
 验证：
 
@@ -62,7 +62,7 @@ curl 应返回包含 status 为 ok 的 JSON。日志命令：
 
     docker compose -f compose.1panel.yaml logs --tail=200 backend frontend
 
-数据库保存在 Docker volume sboard_sboard-data 中。不要执行 docker compose down -v，否则会删除数据库。
+数据库保存在 Docker volume sboard-data 中。不要执行 docker compose down -v，否则会删除数据库。
 
 ## 5. 配置公网访问
 
@@ -99,17 +99,24 @@ curl 应返回包含 status 为 ok 的 JSON。日志命令：
     https://你的域名/subscribe/clash/<订阅Token>
     https://你的域名/subscribe/v2ray/<订阅Token>
 
-## 7. 更新与备份
+## 7. 自动更新、手动更新与备份
 
-更新代码：
+仓库中的 `.github/workflows/publish-images.yml` 会在 `main` 分支每次推送后，把前后端镜像发布到 GitHub Packages：
+
+    ghcr.io/thefunny233/sboard-backend:latest
+    ghcr.io/thefunny233/sboard-frontend:latest
+
+首次发布后，请在 GitHub 仓库的「Packages」中将两个容器包设置为 Public，否则服务器无法匿名拉取。当前 Compose 按公开包设计；如果必须使用 Private 包，需要另外为 Watchtower 配置 GHCR 登录凭据。`watchtower` 容器每 5 分钟检查一次这两个带有更新标签的服务，发现新镜像后会自动拉取、替换容器并保留 SQLite volume。
+
+手动立即更新：
 
     cd /opt/sboard
-    git pull
-    docker compose -f compose.1panel.yaml up -d --build
+    docker compose -f compose.1panel.yaml pull
+    docker compose -f compose.1panel.yaml up -d
 
 备份数据库：
 
     mkdir -p /opt/sboard-backup
-    docker run --rm -v sboard_sboard-data:/data:ro -v /opt/sboard-backup:/backup alpine:3.20 cp /data/sboard.db /backup/sboard-$(date +%F-%H%M%S).db
+    docker run --rm -v sboard-data:/data:ro -v /opt/sboard-backup:/backup alpine:3.20 cp /data/sboard.db /backup/sboard-$(date +%F-%H%M%S).db
 
 排障顺序：先看 docker compose ps，再 curl 本机 health；然后检查 DNS、云安全组、1Panel 防火墙和网站日志。

@@ -87,8 +87,8 @@ SBoard 可以直接作为 1Panel 的 Docker Compose 项目运行。建议使用�
    ```
 
    可用 `openssl rand -hex 32` 生成。不要把 Token 提交到 Git 或写进镜像。
-4. 使用 `docker compose -f compose.1panel.yaml up -d --build` 启动。前端默认发布为
-   `127.0.0.1:23456 -> 80`，首次构建可能需要几分钟。
+4. 使用 `docker compose -f compose.1panel.yaml up -d` 启动。前端默认发布为
+   `127.0.0.1:23456 -> 80`，首次拉取镜像可能需要几分钟。
 5. 正式使用时，在 1Panel -> **网站** -> **创建网站** 中绑定域名，反向代理到
    `http://127.0.0.1:23456`，申请并启用 Let's Encrypt 证书，然后通过 `https://你的域名` 访问。
    面板中的“代理目录”保持 `/`，并开启 WebSocket（当前版本不依赖 WebSocket，但开启不会有坏处）。
@@ -106,6 +106,11 @@ docker compose logs --tail=100 backend frontend
 `/health` 返回 `{"status":"ok",...}` 才表示服务已就绪。SQLite 数据位于 Docker volume
 `sboard-data`，请在 1Panel 中为该 volume 配置定期备份。管理 Token 一旦泄露应立即在 `.env`
 中更换并重建容器；订阅 Token 则在“订阅”页单独轮换。
+
+镜像由 GitHub Actions 自动发布到 GitHub Packages（GHCR）。`main` 分支每次推送后会构建
+`sboard-backend` 和 `sboard-frontend`，服务器上的 Watchtower 每 5 分钟检查并自动重启到新镜像。
+首次发布后，在 GitHub 仓库的 **Packages** 中将这两个容器包设置为 Public；如果保持 Private，
+当前这份 1Panel Compose 无法匿名拉取，不能直接使用。私有包需要另外配置 Watchtower 的 GHCR 登录凭据。
 
 ## API 范围
 
