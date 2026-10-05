@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 from datetime import UTC, datetime, timedelta
 
 from sboard.config import get_settings
@@ -48,11 +49,30 @@ def agent_to_read(agent: Agent) -> AgentRead:
 
 
 def node_online_status(node: Node) -> str:
-    if node.source_type == "external" or node.agent is None:
+    if node.source_type == "external":
+        return external_node_status(node)
+    if node.agent is None:
         return "unknown"
     if agent_is_online(node.agent) and node.agent.xray_status == "running":
         return "online"
     return "offline"
+
+
+def external_node_status(node: Node) -> str:
+    """Report transport reachability for external TCP nodes.
+
+    This is intentionally a lightweight TCP probe, not a proxy handshake: a reachable
+    port is reported as online, while refused/timed-out connections are offline.
+    UDP-only protocols cannot be verified without speaking their protocol and remain
+    unknown instead of being incorrectly marked offline.
+    """
+    if node.protocol not in {"vless", "vmess", "trojan", "ss", "ss2022"}:
+        return "unknown"
+    try:
+        with socket.create_connection((node.address, node.port), timeout=1.5):
+            return "online"
+    except (OSError, ValueError):
+        return "offline"
 
 
 def node_to_read(node: Node) -> NodeRead:
@@ -100,6 +120,7 @@ def subscription_to_read(subscription: Subscription) -> SubscriptionRead:
         tag_ids=[tag.id for tag in subscription.tags],
         config=subscription.config_json or {},
         token_hint=subscription.token_hint,
+        token=subscription.token,
         last_access_at=subscription.last_access_at,
         created_at=subscription.created_at,
         updated_at=subscription.updated_at,

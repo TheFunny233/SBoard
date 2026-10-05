@@ -1,6 +1,6 @@
 services:
-  backend:
-    image: ghcr.io/thefunny233/sboard-backend:latest
+  sboard:
+    image: ghcr.io/thefunny233/sboard:latest
     restart: unless-stopped
     labels:
       com.centurylinklabs.watchtower.enable: "true"
@@ -10,8 +10,8 @@ services:
       SBOARD_DATABASE_URL: sqlite:////app/data/sboard.db
     volumes:
       - sboard-data:/app/data
-    expose:
-      - "8000"
+    ports:
+      - "127.0.0.1:23456:80"
     healthcheck:
       test:
         - CMD
@@ -19,22 +19,11 @@ services:
         - -c
         - >-
           import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)
+          urllib.request.urlopen('http://127.0.0.1/health', timeout=2)
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
-
-  frontend:
-    image: ghcr.io/thefunny233/sboard-frontend:latest
-    restart: unless-stopped
-    labels:
-      com.centurylinklabs.watchtower.enable: "true"
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:23456:80"
+      start_period: 15s
 
   watchtower:
     image: containrrr/watchtower:1.7.1

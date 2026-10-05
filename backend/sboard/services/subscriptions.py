@@ -109,7 +109,11 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
         )
         if node.reality:
             proxy["reality-opts"] = _compact(
-                {"public-key": node.public_key, "short-id": node.short_id}
+                {
+                    "public-key": node.public_key,
+                    "short-id": node.short_id,
+                    "spider-x": extra.get("spider_x"),
+                }
             )
         _apply_transport(proxy, node)
         return proxy
@@ -296,6 +300,8 @@ def _share_link(node: Node, name: str) -> str | None:
                 "sni": node.sni,
                 "pbk": node.public_key if node.reality else None,
                 "sid": node.short_id if node.reality else None,
+                "fp": extra.get("client_fingerprint") if node.reality else None,
+                "spx": extra.get("spider_x") if node.reality else None,
                 "flow": node.flow,
                 "path": node.path,
                 "host": node.host,

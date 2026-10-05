@@ -368,6 +368,7 @@ class ImportRequest(ApiModel):
     tag_ids: list[str] = Field(default_factory=list)
     duplicate_policy: Literal["skip", "create"] = "skip"
     atomic: bool = True
+    name_prefix: str | None = Field(default=None, max_length=100)
 
 
 class ImportItem(ApiModel):
@@ -465,6 +466,7 @@ class SubscriptionUpdate(ApiModel):
 class SubscriptionRead(SubscriptionFields):
     id: str
     token_hint: str
+    token: str | None = None
     last_access_at: datetime | None
     created_at: datetime
     updated_at: datetime

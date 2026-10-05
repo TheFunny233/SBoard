@@ -180,6 +180,7 @@ export interface Subscription {
   tag_ids: string[]
   config: Record<string, unknown>
   token_hint: string
+  token: string | null
   last_access_at: string | null
   created_at: string
   updated_at: string

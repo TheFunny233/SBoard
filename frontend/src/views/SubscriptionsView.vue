@@ -75,6 +75,12 @@ function showSecret(token: string, urls: Record<string, string>): void {
   secretOpen.value = true
 }
 
+function subscriptionUrl(subscription: Subscription, format: 'clash' | 'v2ray'): string {
+  return subscription.token
+    ? new URL(`/subscribe/${format}/${subscription.token}`, window.location.origin).toString()
+    : ''
+}
+
 async function createSubscription(): Promise<void> {
   if (!form.value.name.trim()) {
     ElMessage.warning('请输入订阅名称')
@@ -194,6 +200,17 @@ onMounted(load)
             <span v-else>{{ row.node_ids.length }} 节点 · {{ row.group_ids.length }} 分组 · {{ row.tag_ids.length }} 标签</span>
           </template>
         </el-table-column>
+        <el-table-column label="订阅地址" min-width="340">
+          <template #default="{ row }: { row: Subscription }">
+            <div v-if="row.token" class="subscription-links">
+              <div v-for="format in ['clash', 'v2ray']" :key="format" class="subscription-link">
+                <code>{{ subscriptionUrl(row, format as 'clash' | 'v2ray') }}</code>
+                <el-button text :icon="CopyDocument" aria-label="复制订阅地址" @click="copy(subscriptionUrl(row, format as 'clash' | 'v2ray'))" />
+              </div>
+            </div>
+            <span v-else class="muted">旧订阅不可恢复，请重置 Token</span>
+          </template>
+        </el-table-column>
         <el-table-column label="最近访问" width="130">
           <template #default="{ row }: { row: Subscription }">{{ formatDate(row.last_access_at) }}</template>
         </el-table-column>
@@ -267,7 +284,7 @@ onMounted(load)
     </el-dialog>
 
     <el-dialog v-model="secretOpen" title="保存订阅地址" width="min(650px, 94vw)" :close-on-click-modal="false">
-      <el-alert title="明文 Token 和完整订阅地址关闭后无法再次查看。" type="warning" :closable="false" show-icon />
+      <el-alert title="订阅地址会持续显示在订阅列表中，也可以随时复制。" type="info" :closable="false" show-icon />
       <div class="secret-row">
         <div><span>Token</span><code>{{ secretToken }}</code></div>
         <el-button :icon="CopyDocument" @click="copy(secretToken)">复制</el-button>
@@ -329,6 +346,32 @@ onMounted(load)
 .row-actions {
   display: flex;
   gap: 6px;
+}
+
+.subscription-links {
+  display: grid;
+  gap: 4px;
+}
+
+.subscription-link {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+.subscription-link code {
+  min-width: 0;
+  overflow: hidden;
+  color: #5f5e59;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  color: #9b9a97;
+  font-size: 12px;
 }
 
 .el-form :deep(.el-select) {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Delete, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { api } from '../api'
 import EmptyState from '../components/EmptyState.vue'
@@ -31,6 +31,7 @@ const tags = ref<Tag[]>([])
 const dialogOpen = ref(false)
 const editingId = ref<string | null>(null)
 const filters = ref({ keyword: '', protocol: '', source_type: '', enabled: '' })
+let refreshTimer: number | undefined
 
 function emptyNode(): NodePayload {
   return {
@@ -199,12 +200,19 @@ function groupNames(ids: string[]): string {
   return names.join('、') || '未分组'
 }
 
-onMounted(load)
+onMounted(() => {
+  void load()
+  refreshTimer = window.setInterval(() => void load(), 30_000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer !== undefined) window.clearInterval(refreshTimer)
+})
 </script>
 
 <template>
   <div class="page">
-    <PageHeader title="节点" description="统一管理 SBoardNode 托管节点与外部导入节点。">
+    <PageHeader title="节点" description="统一管理 SBoardNode 托管节点与外部导入节点；外部节点显示 TCP 可达性。">
       <el-button type="primary" :icon="Plus" @click="openCreate">添加节点</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
       <el-button @click="$router.push('/import')">批量导入</el-button>

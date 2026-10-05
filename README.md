@@ -53,7 +53,7 @@ npm run dev
 
 ## Docker 部署
 
-Docker 只部署中心面板 SBoard，SBoardNode 仍然使用纯 Alpine Linux 上的单二进制文件。
+Docker 将前端、后端打包在一个 SBoard 容器中，SBoardNode 仍然使用纯 Alpine Linux 上的单二进制文件。
 
 服务器使用 1Panel 部署请直接阅读：[SBoard 在 1Panel 上用 Docker 部署](docs/1panel.md)。该方案通过 1Panel 网站反向代理提供公网 HTTPS 访问，后端端口不会暴露到公网。
 
@@ -67,7 +67,7 @@ docker compose up -d --build
 启动后：
 
 - 管理界面：`http://127.0.0.1:23456`
-- 后端 API：`http://127.0.0.1:8000`，仅绑定本机
+- 后端 API：由同一容器通过 `http://127.0.0.1:23456/api/` 提供
 - SQLite：保存在 `sboard-data` Docker volume
 
 前端 Nginx 会同源代理 API 和订阅请求，并对含 Token 的 `/subscribe/` 路径关闭访问日志。
@@ -75,11 +75,11 @@ docker compose up -d --build
 ### 1Panel 公网部署
 
 SBoard 可以直接作为 1Panel 的 Docker Compose 项目运行。建议使用域名访问，
-让 1Panel 的网站反向代理负责 HTTPS；不要把后端 `8000` 端口暴露到公网。
+让 1Panel 的网站反向代理负责 HTTPS；不要把容器内部端口暴露到公网。
 
 1. 在服务器安全组/防火墙放行 `80`、`443`。当前 1Panel Compose 将前端绑定到服务器本机的 `127.0.0.1:23456`，不直接暴露管理页面。
 2. 1Panel -> **容器** -> **编排** -> **创建编排**，直接粘贴仓库里的 `compose.1panel.yaml`。
-   当前方案使用 GHCR 现成镜像，不需要上传或克隆 `backend/`、`frontend/` 源码目录。
+   当前方案使用 GHCR 现成的单容器镜像，不需要上传或克隆 `backend/`、`frontend/` 源码目录。
 3. 在 Compose 文件同目录创建 `.env`，写入一个随机的 32 字符以上管理 Token：
 
    ```dotenv
@@ -100,7 +100,7 @@ SBoard 可以直接作为 1Panel 的 Docker Compose 项目运行。建议使用�
 ```bash
 curl https://你的域名/health
 docker compose ps
-docker compose logs --tail=100 backend frontend
+docker compose logs --tail=100 sboard
 ```
 
 `/health` 返回 `{"status":"ok",...}` 才表示服务已就绪。SQLite 数据位于 Docker volume
@@ -108,8 +108,8 @@ docker compose logs --tail=100 backend frontend
 中更换并重建容器；订阅 Token 则在“订阅”页单独轮换。
 
 镜像由 GitHub Actions 自动发布到 GitHub Packages（GHCR）。`main` 分支每次推送后会构建
-`sboard-backend` 和 `sboard-frontend`，服务器上的 Watchtower 每 5 分钟检查并自动重启到新镜像。
-首次发布后，在 GitHub 仓库的 **Packages** 中将这两个容器包设置为 Public；如果保持 Private，
+`sboard` 单容器镜像，服务器上的 Watchtower 每 5 分钟检查并自动重启到新镜像。
+首次发布后，在 GitHub 仓库的 **Packages** 中将这个容器包设置为 Public；如果保持 Private，
 当前这份 1Panel Compose 无法匿名拉取，不能直接使用。私有包需要另外配置 Watchtower 的 GHCR 登录凭据。
 
 ## API 范围

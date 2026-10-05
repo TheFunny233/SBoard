@@ -12,6 +12,7 @@ const groups = ref<Group[]>([])
 const tags = ref<Tag[]>([])
 const groupIds = ref<string[]>([])
 const tagIds = ref<string[]>([])
+const namePrefix = ref('')
 const duplicatePolicy = ref<'skip' | 'create'>('skip')
 const loading = ref(false)
 const result = ref<ImportResult | null>(null)
@@ -45,6 +46,7 @@ async function run(mode: 'preview' | 'commit'): Promise<void> {
       tag_ids: tagIds.value,
       duplicate_policy: duplicatePolicy.value,
       atomic: true,
+      name_prefix: namePrefix.value.trim() || undefined,
     })
     if (mode === 'preview') ElMessage.success('解析完成，请检查结果')
     else if (result.value.created) ElMessage.success(`已导入 ${result.value.created} 个节点`)
@@ -95,6 +97,10 @@ onMounted(loadOptions)
             <el-select v-model="groupIds" multiple clearable placeholder="不指定">
               <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="面板名称（可选）">
+            <el-input v-model="namePrefix" clearable placeholder="例如：SBoard-日本" />
+            <div class="field-note">导入后会作为节点名称前缀，便于识别来源面板。</div>
           </el-form-item>
           <el-form-item label="添加标签">
             <el-select v-model="tagIds" multiple clearable placeholder="不指定">
@@ -189,6 +195,13 @@ onMounted(loadOptions)
 
 .options-panel :deep(.el-select) {
   width: 100%;
+}
+
+.field-note {
+  margin-top: 5px;
+  color: #9b9a97;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .atomic-note {

@@ -215,6 +215,8 @@ class Subscription(TimestampMixin, Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(100))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Kept so administrators can retrieve active subscription URLs after creation.
+    token: Mapped[str | None] = mapped_column(String(100), nullable=True)
     token_hint: Mapped[str] = mapped_column(String(20))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     include_all_nodes: Mapped[bool] = mapped_column(Boolean, default=True)

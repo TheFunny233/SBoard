@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from sboard.config import get_settings
@@ -44,6 +44,11 @@ def init_db() -> None:
     from sboard import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    if engine.dialect.name == "sqlite":
+        columns = {column["name"] for column in inspect(engine).get_columns("subscriptions")}
+        if "token" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE subscriptions ADD COLUMN token VARCHAR(100)"))
 
 
 def get_db() -> Generator[Session, None, None]:

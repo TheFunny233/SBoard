@@ -13,13 +13,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: backend
-            context: ./backend
-          - name: frontend
-            context: ./frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,11 +24,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.name }}
+      - name: Build and push SBoard
         uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
+          context: .
           push: true
           tags: |
-            ghcr.io/thefunny233/sboard-${{ matrix.name }}:latest
-            ghcr.io/thefunny233/sboard-${{ matrix.name }}:${{ github.sha }}
+            ghcr.io/thefunny233/sboard:latest
+            ghcr.io/thefunny233/sboard:${{ github.sha }}

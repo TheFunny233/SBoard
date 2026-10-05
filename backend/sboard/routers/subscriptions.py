@@ -60,6 +60,7 @@ def create_subscription(
     subscription = Subscription(
         name=payload.name,
         token_hash=hash_token(raw_token),
+        token=raw_token,
         token_hint=token_hint(raw_token),
         enabled=payload.enabled,
         include_all_nodes=payload.include_all_nodes,
@@ -121,6 +122,7 @@ def rotate_subscription_token(
         raise not_found("subscription")
     raw_token = generate_token("sbs")
     subscription.token_hash = hash_token(raw_token)
+    subscription.token = raw_token
     subscription.token_hint = token_hint(raw_token)
     db.commit()
     return {

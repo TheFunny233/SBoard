@@ -39,6 +39,8 @@ def import_nodes(payload: ImportRequest, db: Session = Depends(get_db)) -> Impor
     for index, link in enumerate(payload.links):
         try:
             parsed = parse_share_link(link)
+            if payload.name_prefix and parsed.get("name"):
+                parsed["name"] = f"{payload.name_prefix.strip()} - {parsed['name']}"
             parsed["group_ids"] = payload.group_ids
             parsed["tag_ids"] = payload.tag_ids
             node_payload = NodeCreate.model_validate(parsed)
