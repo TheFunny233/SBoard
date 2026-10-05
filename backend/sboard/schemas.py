@@ -54,6 +54,20 @@ class AgentUpdate(ApiModel):
         return self
 
 
+class AgentXrayNode(ApiModel):
+    tag: str | None = None
+    protocol: str
+    port: int = Field(ge=1, le=65535)
+    network: str | None = None
+    security: str | None = None
+    uuid: str | None = None
+    cipher: str | None = None
+    flow: str | None = None
+    sni: str | None = None
+    public_key: str | None = None
+    short_id: str | None = None
+
+
 class AgentRead(ApiModel):
     id: str
     name: str
@@ -71,6 +85,7 @@ class AgentRead(ApiModel):
     xray_version: str | None
     xray_message: str | None
     xray_ports: list[int]
+    xray_nodes: list[AgentXrayNode]
     desired_config_version: int
     applied_config_version: int
     created_at: datetime
@@ -93,12 +108,12 @@ class NodeFields(ApiModel):
     uuid: str | None = Field(default=None, max_length=100)
     password: str | None = None
     cipher: str | None = Field(default=None, max_length=100)
-    tls: bool = False
-    reality: bool = False
+    tls: bool = True
+    reality: bool = True
     sni: str | None = Field(default=None, max_length=255)
     public_key: str | None = None
     short_id: str | None = Field(default=None, max_length=100)
-    flow: str | None = Field(default=None, max_length=100)
+    flow: str | None = Field(default="xtls-rprx-vision", max_length=100)
     network: str | None = Field(default=None, max_length=50)
     security: str | None = Field(default=None, max_length=50)
     path: str | None = None
@@ -485,6 +500,7 @@ class HeartbeatRequest(ApiModel):
     xray_ports: list[int] = Field(default_factory=list, max_length=100)
     restart_count: int = Field(default=0, ge=0)
     xray_message: str | None = Field(default=None, max_length=2000)
+    xray_nodes: list[AgentXrayNode] = Field(default_factory=list, max_length=100)
     applied_config_version: int = Field(default=0, ge=0)
     applied_config_hash: str | None = Field(default=None, max_length=64)
     capabilities: list[str] = Field(default_factory=list, max_length=100)

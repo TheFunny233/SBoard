@@ -39,6 +39,7 @@ def agent_to_read(agent: Agent) -> AgentRead:
         xray_version=agent.xray_version,
         xray_message=agent.xray_message,
         xray_ports=agent.xray_ports or [],
+        xray_nodes=(agent.extra_json or {}).get("xray_nodes", []),
         desired_config_version=agent.desired_config_version,
         applied_config_version=agent.applied_config_version,
         created_at=agent.created_at,

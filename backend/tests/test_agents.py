@@ -34,6 +34,20 @@ def test_agent_creation_and_heartbeat(client: TestClient, admin_headers: dict[st
             "xray_status": "running",
             "xray_version": "25.1.1",
             "xray_ports": [443],
+            "xray_nodes": [
+                {
+                    "tag": "sboard-vless-reality",
+                    "protocol": "vless",
+                    "port": 443,
+                    "network": "tcp",
+                    "security": "reality",
+                    "uuid": "11111111-1111-1111-1111-111111111111",
+                    "flow": "xtls-rprx-vision",
+                    "sni": "www.cloudflare.com",
+                    "public_key": "public-key",
+                    "short_id": "abcd1234",
+                }
+            ],
             "capabilities": ["heartbeat"],
         },
     )
@@ -45,6 +59,8 @@ def test_agent_creation_and_heartbeat(client: TestClient, admin_headers: dict[st
     assert detail.json()["online"] is True
     assert detail.json()["xray_status"] == "running"
     assert detail.json()["memory_total_bytes"] == 128_000_000
+    assert detail.json()["xray_nodes"][0]["protocol"] == "vless"
+    assert detail.json()["xray_nodes"][0]["public_key"] == "public-key"
 
 
 def test_agent_token_cannot_impersonate_another_agent(

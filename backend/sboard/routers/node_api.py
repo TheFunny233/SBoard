@@ -64,6 +64,7 @@ def heartbeat(
             "xray_pid": payload.xray_pid,
             "restart_count": payload.restart_count,
             "capabilities": payload.capabilities,
+            "xray_nodes": [node.model_dump(exclude_none=True) for node in payload.xray_nodes],
         }
     db.commit()
 

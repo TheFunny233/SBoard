@@ -7,7 +7,7 @@ import { api } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusLabel from '../components/StatusLabel.vue'
-import type { Agent } from '../types'
+import type { Agent, AgentXrayNode } from '../types'
 import { copyText, formatBytes, formatDate, formatUptime } from '../utils'
 
 const loading = ref(false)
@@ -115,6 +115,41 @@ onMounted(load)
 
     <div class="surface table-surface" v-loading="loading">
       <el-table v-if="agents.length" :data="agents" row-key="id">
+        <el-table-column type="expand" width="42">
+          <template #default="{ row }: { row: Agent }">
+            <div class="xray-node-detail">
+              <div class="xray-node-heading">
+                <strong>Xray 入站节点</strong>
+                <span>{{ row.xray_nodes.length }} 个</span>
+              </div>
+              <el-table v-if="row.xray_nodes.length" :data="row.xray_nodes" size="small" row-key="tag">
+                <el-table-column label="协议" width="110">
+                  <template #default="{ row: node }: { row: AgentXrayNode }">{{ node.protocol }}</template>
+                </el-table-column>
+                <el-table-column label="端口" width="90">
+                  <template #default="{ row: node }: { row: AgentXrayNode }">{{ node.port }}</template>
+                </el-table-column>
+                <el-table-column label="传输 / 安全" min-width="150">
+                  <template #default="{ row: node }: { row: AgentXrayNode }">
+                    {{ [node.network, node.security].filter(Boolean).join(' / ') || '—' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="SNI" min-width="160">
+                  <template #default="{ row: node }: { row: AgentXrayNode }">{{ node.sni || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="Flow" min-width="150">
+                  <template #default="{ row: node }: { row: AgentXrayNode }">{{ node.flow || '—' }}</template>
+                </el-table-column>
+                <el-table-column label="Reality 公钥" min-width="230">
+                  <template #default="{ row: node }: { row: AgentXrayNode }">
+                    <span class="mono node-secret" :title="node.public_key || ''">{{ node.public_key || '—' }}</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <span v-else class="empty-node-detail">未发现 Xray 入站配置</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="95">
           <template #default="{ row }: { row: Agent }">
             <StatusLabel :status="row.online ? 'online' : 'offline'" />
@@ -130,7 +165,10 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="Xray" width="110">
           <template #default="{ row }: { row: Agent }">
-            <StatusLabel :status="row.xray_status" :text="row.xray_version || row.xray_status" />
+            <div class="xray-cell">
+              <StatusLabel :status="row.xray_status" :text="row.xray_version || row.xray_status" />
+              <span>{{ row.xray_nodes.length }} 个节点</span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="资源" min-width="180">
@@ -251,6 +289,44 @@ onMounted(load)
 .row-actions {
   display: flex;
   gap: 6px;
+}
+
+.xray-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.xray-cell > span,
+.xray-node-heading > span,
+.empty-node-detail {
+  color: #8b8a86;
+  font-size: 11px;
+}
+
+.xray-node-detail {
+  padding: 4px 24px 12px 48px;
+}
+
+.xray-node-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.xray-node-heading strong {
+  color: #37352f;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.node-secret {
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .secret-block {

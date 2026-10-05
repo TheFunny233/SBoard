@@ -36,10 +36,25 @@ export interface Agent {
   xray_version: string | null
   xray_message: string | null
   xray_ports: number[]
+  xray_nodes: AgentXrayNode[]
   desired_config_version: number
   applied_config_version: number
   created_at: string
   updated_at: string
+}
+
+export interface AgentXrayNode {
+  tag: string | null
+  protocol: string
+  port: number
+  network: string | null
+  security: string | null
+  uuid: string | null
+  cipher: string | null
+  flow: string | null
+  sni: string | null
+  public_key: string | null
+  short_id: string | null
 }
 
 export interface AgentCreateResult {
