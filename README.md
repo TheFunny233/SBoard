@@ -78,8 +78,8 @@ SBoard 可以直接作为 1Panel 的 Docker Compose 项目运行。建议使用�
 让 1Panel 的网站反向代理负责 HTTPS；不要把后端 `8000` 端口暴露到公网。
 
 1. 在服务器安全组/防火墙放行 `80`、`443`。当前 1Panel Compose 将前端绑定到服务器本机的 `127.0.0.1:23456`，不直接暴露管理页面。
-2. 1Panel -> **容器** -> **编排** -> **创建编排**，选择从 Git 或本地目录部署，使用仓库里的
-   `compose.1panel.yaml`（目录中同时保留 `backend/` 和 `frontend/`）。
+2. 1Panel -> **容器** -> **编排** -> **创建编排**，直接粘贴仓库里的 `compose.1panel.yaml`。
+   当前方案使用 GHCR 现成镜像，不需要上传或克隆 `backend/`、`frontend/` 源码目录。
 3. 在 Compose 文件同目录创建 `.env`，写入一个随机的 32 字符以上管理 Token：
 
    ```dotenv
@@ -87,7 +87,7 @@ SBoard 可以直接作为 1Panel 的 Docker Compose 项目运行。建议使用�
    ```
 
    可用 `openssl rand -hex 32` 生成。不要把 Token 提交到 Git 或写进镜像。
-4. 使用 `docker compose -f compose.1panel.yaml up -d` 启动。前端默认发布为
+4. 使用 `docker compose up -d` 启动。前端默认发布为
    `127.0.0.1:23456 -> 80`，首次拉取镜像可能需要几分钟。
 5. 正式使用时，在 1Panel -> **网站** -> **创建网站** 中绑定域名，反向代理到
    `http://127.0.0.1:23456`，申请并启用 Let's Encrypt 证书，然后通过 `https://你的域名` 访问。

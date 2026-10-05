@@ -13,20 +13,15 @@
 
 登录 1Panel 后，在「面板设置」确认 Docker 正常运行。
 
-## 2. 上传项目到服务器
+## 2. 不需要上传项目目录
 
-推荐在服务器执行：
+当前部署使用 GitHub Packages（GHCR）中的现成镜像，Compose 文件里没有 `build:`，因此不需要上传或克隆整个 SBoard 项目，也不需要上传 `backend/`、`frontend/` 源码目录。你只需要把一个 Compose 文件交给 1Panel。
+
+可以直接在 1Panel 编排编辑器中粘贴仓库里的 [compose.1panel.yaml](https://raw.githubusercontent.com/TheFunny233/SBoard/main/compose.1panel.yaml)。如果使用服务器终端，只下载这一个文件即可：
 
     sudo mkdir -p /opt/sboard
-    sudo chown -R "$USER":"$USER" /opt/sboard
     cd /opt/sboard
-    git clone <你的 SBoard 仓库地址> .
-
-也可以使用 1Panel 文件管理器上传并解压。最终必须存在：
-
-    /opt/sboard/compose.1panel.yaml
-    /opt/sboard/backend/
-    /opt/sboard/frontend/
+    curl -fsSL https://raw.githubusercontent.com/TheFunny233/SBoard/main/compose.1panel.yaml -o compose.yaml
 
 ## 3. 生成管理 Token
 
@@ -42,25 +37,25 @@
 打开「容器」→「编排」→「创建编排」：
 
 1. 名称：sboard。
-2. 编排路径：/opt/sboard。
-3. 编排文件：compose.1panel.yaml（仓库已提供）。该文件使用 GitHub Packages（GHCR）镜像，不在服务器本地构建。
-4. 环境变量添加 SBOARD_ADMIN_TOKEN，值为上一步生成的随机字符串。
-5. 保存并启动。首次启动会拉取镜像，可能需要几分钟。
+2. 编排内容：粘贴 `compose.1panel.yaml` 的完整内容。不要选择本地源码目录，也不要执行构建。
+3. 环境变量添加 `SBOARD_ADMIN_TOKEN`，值为上一步生成的随机字符串。
+4. 保存并启动。首次启动会从 GHCR 拉取镜像，可能需要几分钟。
 
 服务器终端也可执行：
 
     cd /opt/sboard
-    SBOARD_ADMIN_TOKEN='替换为你的随机字符串' docker compose -f compose.1panel.yaml up -d
+    printf 'SBOARD_ADMIN_TOKEN=%s\n' '替换为你的随机字符串' > .env
+    docker compose -f compose.yaml up -d
 
 验证：
 
     cd /opt/sboard
-    docker compose -f compose.1panel.yaml ps
+    docker compose -f compose.yaml ps
     curl -fsS http://127.0.0.1:23456/health
 
 curl 应返回包含 status 为 ok 的 JSON。日志命令：
 
-    docker compose -f compose.1panel.yaml logs --tail=200 backend frontend
+    docker compose -f compose.yaml logs --tail=200 backend frontend watchtower
 
 数据库保存在 Docker volume sboard-data 中。不要执行 docker compose down -v，否则会删除数据库。
 
@@ -111,8 +106,8 @@ curl 应返回包含 status 为 ok 的 JSON。日志命令：
 手动立即更新：
 
     cd /opt/sboard
-    docker compose -f compose.1panel.yaml pull
-    docker compose -f compose.1panel.yaml up -d
+    docker compose -f compose.yaml pull
+    docker compose -f compose.yaml up -d
 
 备份数据库：
 
