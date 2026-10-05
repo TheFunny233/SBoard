@@ -113,6 +113,32 @@ export interface BatchDeleteResult {
   missing_ids: string[]
 }
 
+export type RuleTargetMode = 'node' | 'direct' | 'reject'
+
+export interface RuleSet {
+  id: string
+  name: string
+  description: string | null
+  enabled: boolean
+  target_mode: RuleTargetMode
+  node_id: string | null
+  target_node_name: string | null
+  rules: string[]
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface RuleSetPayload {
+  name: string
+  description: string | null
+  enabled: boolean
+  target_mode: RuleTargetMode
+  node_id: string | null
+  rules: string[]
+  sort_order: number
+}
+
 export interface Group {
   id: string
   name: string

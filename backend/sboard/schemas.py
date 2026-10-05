@@ -194,6 +194,107 @@ class NodeBatchDeleteResult(ApiModel):
     missing_ids: list[str]
 
 
+RuleTargetMode = Literal["node", "direct", "reject"]
+SUPPORTED_RULE_TYPES = {
+    "DOMAIN",
+    "DOMAIN-SUFFIX",
+    "DOMAIN-KEYWORD",
+    "GEOSITE",
+    "GEOIP",
+    "IP-CIDR",
+    "IP-CIDR6",
+    "SRC-IP-CIDR",
+    "DST-PORT",
+    "SRC-PORT",
+    "PROCESS-NAME",
+    "PROCESS-PATH",
+    "NETWORK",
+    "IN-TYPE",
+}
+
+
+def normalize_rule_conditions(value: list[str]) -> list[str]:
+    rules: list[str] = []
+    for raw_rule in value:
+        rule = raw_rule.strip()
+        if not rule or rule in rules:
+            continue
+        if len(rule) > 500:
+            raise ValueError("each rule must be at most 500 characters")
+        parts = [part.strip() for part in rule.split(",")]
+        rule_type = parts[0].upper()
+        if rule_type not in SUPPORTED_RULE_TYPES:
+            raise ValueError(f"unsupported rule type: {parts[0]}")
+        if len(parts) not in {2, 3} or not parts[1]:
+            raise ValueError(f"invalid rule condition: {rule}")
+        if len(parts) == 3 and parts[2].lower() != "no-resolve":
+            raise ValueError("do not include a policy; choose the target separately")
+        rules.append(",".join([rule_type, *parts[1:]]))
+    if not rules:
+        raise ValueError("at least one rule is required")
+    return rules
+
+
+class RuleSetCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    enabled: bool = True
+    target_mode: RuleTargetMode = "node"
+    node_id: str | None = None
+    rules: list[str] = Field(min_length=1, max_length=200)
+    sort_order: int = 0
+
+    @field_validator("rules")
+    @classmethod
+    def validate_rules(cls, value: list[str]) -> list[str]:
+        return normalize_rule_conditions(value)
+
+    @model_validator(mode="after")
+    def validate_target(self) -> RuleSetCreate:
+        if self.target_mode == "node" and not self.node_id:
+            raise ValueError("node target requires node_id")
+        if self.target_mode != "node" and self.node_id:
+            raise ValueError("DIRECT and REJECT targets cannot have node_id")
+        return self
+
+
+class RuleSetUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    enabled: bool | None = None
+    target_mode: RuleTargetMode | None = None
+    node_id: str | None = None
+    rules: list[str] | None = Field(default=None, min_length=1, max_length=200)
+    sort_order: int | None = None
+
+    @field_validator("rules")
+    @classmethod
+    def validate_rules(cls, value: list[str] | None) -> list[str] | None:
+        return normalize_rule_conditions(value) if value is not None else value
+
+    @model_validator(mode="after")
+    def reject_nulls(self) -> RuleSetUpdate:
+        required = {"name", "enabled", "target_mode", "rules", "sort_order"}
+        for field in required & self.model_fields_set:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
+
+
+class RuleSetRead(ApiModel):
+    id: str
+    name: str
+    description: str | None
+    enabled: bool
+    target_mode: RuleTargetMode
+    node_id: str | None
+    target_node_name: str | None
+    rules: list[str]
+    sort_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
 class GroupCreate(ApiModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None

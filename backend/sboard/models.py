@@ -163,6 +163,24 @@ class Node(TimestampMixin, Base):
     )
 
 
+class RuleSet(TimestampMixin, Base):
+    __tablename__ = "rule_sets"
+    __table_args__ = (Index("ix_rule_sets_enabled_order", "enabled", "sort_order"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    target_mode: Mapped[str] = mapped_column(String(20), default="node")
+    node_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("nodes.id", ondelete="SET NULL"), index=True
+    )
+    rules_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    target_node: Mapped[Node | None] = relationship()
+
+
 class Group(TimestampMixin, Base):
     __tablename__ = "groups"
 

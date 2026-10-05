@@ -7,6 +7,7 @@ const router = createRouter({
     { path: '/nodes', name: 'nodes', component: () => import('../views/NodesView.vue') },
     { path: '/agents', name: 'agents', component: () => import('../views/AgentsView.vue') },
     { path: '/import', name: 'import', component: () => import('../views/ImportView.vue') },
+    { path: '/rules', name: 'rules', component: () => import('../views/RulesView.vue') },
     {
       path: '/subscriptions',
       name: 'subscriptions',
@@ -19,4 +20,3 @@ const router = createRouter({
 })
 
 export default router
-

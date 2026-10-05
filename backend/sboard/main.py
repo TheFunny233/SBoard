@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sboard import __version__
 from sboard.config import get_settings
 from sboard.database import init_db
-from sboard.routers import agents, groups, imports, node_api, nodes, overview, subscriptions
+from sboard.routers import agents, groups, imports, node_api, nodes, overview, rules, subscriptions
 
 
 @asynccontextmanager
@@ -29,13 +29,17 @@ app = FastAPI(
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    details = exc.errors()
+    for error in details:
+        if "ctx" in error:
+            error["ctx"] = {key: str(value) for key, value in error["ctx"].items()}
     return JSONResponse(
         status_code=422,
         content={
             "detail": {
                 "code": "validation_error",
                 "message": "Request validation failed",
-                "details": exc.errors(),
+                "details": details,
             }
         },
     )
@@ -52,6 +56,7 @@ app.include_router(agents.router, prefix=api_prefix)
 app.include_router(nodes.router, prefix=api_prefix)
 app.include_router(imports.router, prefix=api_prefix)
 app.include_router(groups.router, prefix=api_prefix)
+app.include_router(rules.router, prefix=api_prefix)
 app.include_router(subscriptions.router, prefix=api_prefix)
 app.include_router(node_api.router, prefix="/api")
 app.include_router(subscriptions.public_router)

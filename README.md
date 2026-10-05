@@ -18,6 +18,7 @@ SBoard/
 - 节点分组与标签
 - VLESS、VMess、Trojan、Shadowsocks、Shadowsocks 2022、Hysteria2、TUIC 链接导入
 - Clash Meta YAML 与 V2Ray Base64 订阅
+- Clash Meta 站点分流规则，支持指定节点、直连、拒绝和常用站点模板
 - WireGuard 数据模型预留
 - Notion 风格管理界面，使用左侧导航和低饱和中性配色
 

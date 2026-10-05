@@ -9,6 +9,8 @@ import type {
   NodeRecord,
   Overview,
   Paged,
+  RuleSet,
+  RuleSetPayload,
   Subscription,
   SubscriptionCreateResult,
   SubscriptionPreview,
@@ -48,6 +50,13 @@ export const api = {
     }),
   importNodes: (payload: Record<string, unknown>) =>
     apiRequest<ImportResult>('/api/v1/nodes/import', { method: 'POST', body: json(payload) }),
+
+  rules: () => apiRequest<RuleSet[]>('/api/v1/rules'),
+  createRule: (payload: RuleSetPayload) =>
+    apiRequest<RuleSet>('/api/v1/rules', { method: 'POST', body: json(payload) }),
+  updateRule: (id: string, payload: Partial<RuleSetPayload>) =>
+    apiRequest<RuleSet>(`/api/v1/rules/${id}`, { method: 'PATCH', body: json(payload) }),
+  deleteRule: (id: string) => apiRequest<void>(`/api/v1/rules/${id}`, { method: 'DELETE' }),
 
   groups: () => apiRequest<Group[]>('/api/v1/groups'),
   createGroup: (payload: Pick<Group, 'name' | 'description' | 'sort_order'>) =>

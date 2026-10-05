@@ -9,9 +9,9 @@ from urllib.parse import quote, urlencode
 
 import yaml
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from sboard.models import Node, Subscription
+from sboard.models import Node, RuleSet, Subscription
 
 
 @dataclass(slots=True)
@@ -184,6 +184,42 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
     return None
 
 
+def _rule_with_target(condition: str, target: str) -> str:
+    parts = [part.strip() for part in condition.split(",")]
+    if parts[-1].lower() == "no-resolve":
+        return ",".join([*parts[:-1], target, parts[-1]])
+    return ",".join([*parts, target])
+
+
+def _managed_rules(
+    db: Session,
+    included_node_ids: set[str],
+    names: dict[str, str],
+) -> tuple[list[str], list[str]]:
+    rule_sets = db.scalars(
+        select(RuleSet)
+        .options(selectinload(RuleSet.target_node))
+        .where(RuleSet.enabled.is_(True))
+        .order_by(RuleSet.sort_order, RuleSet.name, RuleSet.id)
+    ).all()
+    rules: list[str] = []
+    warnings: list[str] = []
+    for rule_set in rule_sets:
+        if rule_set.target_mode == "direct":
+            target = "DIRECT"
+        elif rule_set.target_mode == "reject":
+            target = "REJECT"
+        elif rule_set.node_id and rule_set.node_id in included_node_ids:
+            target = names[rule_set.node_id]
+        else:
+            warnings.append(
+                f"Rule set {rule_set.name} skipped because its target node is not in this subscription"
+            )
+            continue
+        rules.extend(_rule_with_target(condition, target) for condition in rule_set.rules_json or [])
+    return rules, warnings
+
+
 def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscription:
     nodes = selected_nodes(db, subscription)
     names = _unique_names(nodes)
@@ -227,8 +263,13 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
     else:
         proxy_groups.append({"name": group_name, "type": "select", "proxies": ["DIRECT"]})
 
+    managed_rules, rule_warnings = _managed_rules(db, set(included), names)
+    warnings.extend(rule_warnings)
     raw_rules = config.get("rules")
-    rules = raw_rules if isinstance(raw_rules, list) and raw_rules else [f"MATCH,{group_name}"]
+    subscription_rules = raw_rules if isinstance(raw_rules, list) and raw_rules else []
+    rules = [*managed_rules, *subscription_rules]
+    if not any(rule.strip().upper().startswith("MATCH,") for rule in rules):
+        rules.append(f"MATCH,{group_name}")
     document = {"proxies": proxies, "proxy-groups": proxy_groups, "rules": rules}
     content = yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=4096)
     return GeneratedSubscription(content=content, node_ids=included, warnings=warnings)

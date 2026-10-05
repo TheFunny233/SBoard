@@ -7,6 +7,7 @@ import {
   Menu,
   Setting,
   Share,
+  Tickets,
 } from '@element-plus/icons-vue'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -22,6 +23,7 @@ const navigation = [
   { to: '/', label: '概览', icon: DataBoard },
   { to: '/nodes', label: '节点', icon: Share },
   { to: '/agents', label: '边缘主机', icon: Connection },
+  { to: '/rules', label: '规则', icon: Tickets },
   { to: '/subscriptions', label: '订阅', icon: Menu },
   { to: '/taxonomy', label: '分组与标签', icon: CollectionTag },
 ]
