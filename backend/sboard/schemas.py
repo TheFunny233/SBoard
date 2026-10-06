@@ -209,7 +209,7 @@ class NodeBatchDeleteResult(ApiModel):
     missing_ids: list[str]
 
 
-RuleTargetMode = Literal["node", "direct", "reject"]
+RuleTargetMode = Literal["node", "group", "direct", "reject"]
 SUPPORTED_RULE_TYPES = {
     "DOMAIN",
     "DOMAIN-SUFFIX",
@@ -256,6 +256,7 @@ class RuleSetCreate(ApiModel):
     enabled: bool = True
     target_mode: RuleTargetMode = "node"
     node_id: str | None = None
+    group_id: str | None = None
     rules: list[str] = Field(min_length=1, max_length=200)
     sort_order: int = 0
 
@@ -266,10 +267,12 @@ class RuleSetCreate(ApiModel):
 
     @model_validator(mode="after")
     def validate_target(self) -> RuleSetCreate:
-        if self.target_mode == "node" and not self.node_id:
+        if self.target_mode == "node" and (not self.node_id or self.group_id):
             raise ValueError("node target requires node_id")
-        if self.target_mode != "node" and self.node_id:
-            raise ValueError("DIRECT and REJECT targets cannot have node_id")
+        if self.target_mode == "group" and (not self.group_id or self.node_id):
+            raise ValueError("group target requires group_id")
+        if self.target_mode in {"direct", "reject"} and (self.node_id or self.group_id):
+            raise ValueError("DIRECT and REJECT targets cannot have node_id or group_id")
         return self
 
 
@@ -279,6 +282,7 @@ class RuleSetUpdate(ApiModel):
     enabled: bool | None = None
     target_mode: RuleTargetMode | None = None
     node_id: str | None = None
+    group_id: str | None = None
     rules: list[str] | None = Field(default=None, min_length=1, max_length=200)
     sort_order: int | None = None
 
@@ -304,6 +308,8 @@ class RuleSetRead(ApiModel):
     target_mode: RuleTargetMode
     node_id: str | None
     target_node_name: str | None
+    group_id: str | None
+    target_group_name: str | None
     rules: list[str]
     sort_order: int
     created_at: datetime

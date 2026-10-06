@@ -6,54 +6,81 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
-import type { NodeRecord, RuleSet, RuleSetPayload, RuleTargetMode } from '../types'
+import type { Group, NodeRecord, RuleSet, RuleSetPayload, RuleTargetMode } from '../types'
 
 interface RuleTemplate {
   name: string
   category: string
   description: string
+  targetMode: RuleTargetMode
+  sortOrder: number
   rules: string[]
 }
 
 const templates: RuleTemplate[] = [
   {
-    name: 'YouTube',
-    category: '大流量',
-    description: '视频站点及常用静态资源域名',
+    name: '中国大陆与局域网',
+    category: '直连',
+    description: '中国大陆域名、IP 与局域网地址直接连接',
+    targetMode: 'direct',
+    sortOrder: -300,
     rules: [
-      'DOMAIN-SUFFIX,youtube.com',
-      'DOMAIN-SUFFIX,youtu.be',
-      'DOMAIN-SUFFIX,googlevideo.com',
-      'DOMAIN-SUFFIX,ytimg.com',
+      'GEOSITE,private',
+      'GEOIP,private,no-resolve',
+      'GEOSITE,cn',
+      'GEOIP,CN,no-resolve',
     ],
   },
   {
-    name: 'GitHub',
-    category: '开发',
-    description: '代码托管、Release 与静态资源',
-    rules: [
-      'DOMAIN-SUFFIX,github.com',
-      'DOMAIN-SUFFIX,githubusercontent.com',
-      'DOMAIN-SUFFIX,githubassets.com',
-      'DOMAIN-SUFFIX,github.io',
-    ],
-  },
-  {
-    name: 'OpenAI / ChatGPT',
+    name: 'AI 高纯净度',
     category: 'AI',
-    description: 'OpenAI API、ChatGPT 与静态资源',
+    description: 'OpenAI、Claude 与 Gemini；建议目标选择高纯净度节点组',
+    targetMode: 'group',
+    sortOrder: -200,
     rules: [
       'DOMAIN-SUFFIX,openai.com',
       'DOMAIN-SUFFIX,chatgpt.com',
       'DOMAIN-SUFFIX,oaistatic.com',
       'DOMAIN-SUFFIX,oaiusercontent.com',
+      'DOMAIN-SUFFIX,claude.ai',
+      'DOMAIN-SUFFIX,anthropic.com',
+      'DOMAIN,gemini.google.com',
+      'DOMAIN,aistudio.google.com',
+      'DOMAIN-SUFFIX,generativelanguage.googleapis.com',
     ],
   },
   {
-    name: 'Claude',
-    category: 'AI',
-    description: 'Claude 与 Anthropic 服务',
-    rules: ['DOMAIN-SUFFIX,claude.ai', 'DOMAIN-SUFFIX,anthropic.com'],
+    name: '大流量与开发站点',
+    category: '通用代理',
+    description: 'YouTube、X、Instagram、Google、GitHub、GitLab 及常用开发资源',
+    targetMode: 'node',
+    sortOrder: -100,
+    rules: [
+      'DOMAIN-SUFFIX,youtube.com',
+      'DOMAIN-SUFFIX,youtu.be',
+      'DOMAIN-SUFFIX,googlevideo.com',
+      'DOMAIN-SUFFIX,ytimg.com',
+      'DOMAIN-SUFFIX,ggpht.com',
+      'DOMAIN-SUFFIX,x.com',
+      'DOMAIN-SUFFIX,twitter.com',
+      'DOMAIN-SUFFIX,twimg.com',
+      'DOMAIN-SUFFIX,instagram.com',
+      'DOMAIN-SUFFIX,cdninstagram.com',
+      'DOMAIN-SUFFIX,google.com',
+      'DOMAIN-SUFFIX,googleapis.com',
+      'DOMAIN-SUFFIX,gstatic.com',
+      'DOMAIN-SUFFIX,googleusercontent.com',
+      'DOMAIN-SUFFIX,github.com',
+      'DOMAIN-SUFFIX,githubusercontent.com',
+      'DOMAIN-SUFFIX,githubassets.com',
+      'DOMAIN-SUFFIX,github.io',
+      'DOMAIN-SUFFIX,gitlab.com',
+      'DOMAIN-SUFFIX,gitlab-static.net',
+      'DOMAIN-SUFFIX,npmjs.com',
+      'DOMAIN-SUFFIX,npmjs.org',
+      'DOMAIN-SUFFIX,docker.com',
+      'DOMAIN-SUFFIX,docker.io',
+    ],
   },
 ]
 
@@ -61,6 +88,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rules = ref<RuleSet[]>([])
 const nodes = ref<NodeRecord[]>([])
+const groups = ref<Group[]>([])
 const dialogOpen = ref(false)
 const editingId = ref<string | null>(null)
 const rulesText = ref('')
@@ -72,6 +100,7 @@ function emptyForm(): RuleSetPayload {
     enabled: true,
     target_mode: 'node',
     node_id: null,
+    group_id: null,
     rules: [],
     sort_order: 0,
   }
@@ -83,12 +112,14 @@ const enabledNodes = computed(() => nodes.value.filter((node) => node.enabled))
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const [ruleList, nodePage] = await Promise.all([
+    const [ruleList, nodePage, groupList] = await Promise.all([
       api.rules(),
       api.nodes({ page_size: 500 }),
+      api.groups(),
     ])
     rules.value = ruleList
     nodes.value = nodePage.items
+    groups.value = groupList
   } catch (reason) {
     ElMessage.error(reason instanceof Error ? reason.message : '无法加载规则')
   } finally {
@@ -102,6 +133,8 @@ function openCreate(template?: RuleTemplate): void {
     ...emptyForm(),
     name: template?.name || '',
     description: template?.description || null,
+    target_mode: template?.targetMode || 'node',
+    sort_order: template?.sortOrder || 0,
   }
   rulesText.value = template?.rules.join('\n') || ''
   dialogOpen.value = true
@@ -115,6 +148,7 @@ function openEdit(rule: RuleSet): void {
     enabled: rule.enabled,
     target_mode: rule.target_mode,
     node_id: rule.node_id,
+    group_id: rule.group_id,
     rules: [...rule.rules],
     sort_order: rule.sort_order,
   }
@@ -125,11 +159,13 @@ function openEdit(rule: RuleSet): void {
 function targetLabel(rule: RuleSet): string {
   if (rule.target_mode === 'direct') return 'DIRECT'
   if (rule.target_mode === 'reject') return 'REJECT'
+  if (rule.target_mode === 'group') return rule.target_group_name || '目标节点组已删除'
   return rule.target_node_name || '目标节点已删除'
 }
 
 function onTargetModeChange(mode: RuleTargetMode): void {
   if (mode !== 'node') form.value.node_id = null
+  if (mode !== 'group') form.value.group_id = null
 }
 
 async function save(): Promise<void> {
@@ -145,6 +181,10 @@ async function save(): Promise<void> {
     ElMessage.warning('请选择目标节点')
     return
   }
+  if (form.value.target_mode === 'group' && !form.value.group_id) {
+    ElMessage.warning('请选择目标节点组')
+    return
+  }
   if (!conditions.length) {
     ElMessage.warning('请至少填写一条规则')
     return
@@ -156,6 +196,7 @@ async function save(): Promise<void> {
       name: form.value.name.trim(),
       description: form.value.description?.trim() || null,
       node_id: form.value.target_mode === 'node' ? form.value.node_id : null,
+      group_id: form.value.target_mode === 'group' ? form.value.group_id : null,
       rules: conditions,
     }
     if (editingId.value) await api.updateRule(editingId.value, payload)
@@ -200,7 +241,7 @@ onMounted(load)
 
 <template>
   <div class="page">
-    <PageHeader title="规则" description="为 Clash Meta 订阅设置按站点分流的目标节点。">
+    <PageHeader title="规则" description="为 Clash Meta 订阅设置按站点分流的目标节点或节点组。">
       <el-button type="primary" :icon="Plus" @click="openCreate()">添加规则</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </PageHeader>
@@ -208,8 +249,8 @@ onMounted(load)
     <section class="surface template-section">
       <div class="section-heading">
         <div>
-          <h2>常用站点</h2>
-          <p>选择模板后再指定节点，域名规则仍可自由增删。</p>
+          <h2>常用场景</h2>
+          <p>大陆流量默认直连；AI 使用高纯净度节点组，通用代理单独选择节点。</p>
         </div>
       </div>
       <div class="template-grid">
@@ -222,7 +263,7 @@ onMounted(load)
         >
           <span>{{ template.category }}</span>
           <strong>{{ template.name }}</strong>
-          <small>{{ template.rules.length }} 条域名规则</small>
+          <small>{{ template.rules.length }} 条规则</small>
         </button>
       </div>
     </section>
@@ -239,7 +280,14 @@ onMounted(load)
         </el-table-column>
         <el-table-column label="目标" min-width="150">
           <template #default="{ row }: { row: RuleSet }">
-            <span class="target-label" :class="{ missing: row.target_mode === 'node' && !row.target_node_name }">
+            <span
+              class="target-label"
+              :class="{
+                missing:
+                  (row.target_mode === 'node' && !row.target_node_name) ||
+                  (row.target_mode === 'group' && !row.target_group_name),
+              }"
+            >
               {{ targetLabel(row) }}
             </span>
           </template>
@@ -289,6 +337,7 @@ onMounted(load)
           <el-form-item label="流量目标" required>
             <el-select v-model="form.target_mode" @change="onTargetModeChange">
               <el-option label="指定节点" value="node" />
+              <el-option label="指定节点组" value="group" />
               <el-option label="DIRECT（直连）" value="direct" />
               <el-option label="REJECT（拒绝）" value="reject" />
             </el-select>
@@ -303,7 +352,20 @@ onMounted(load)
               />
             </el-select>
           </el-form-item>
+          <el-form-item v-if="form.target_mode === 'group'" label="目标节点组" required>
+            <el-select v-model="form.group_id" filterable placeholder="选择节点组">
+              <el-option
+                v-for="group in groups"
+                :key="group.id"
+                :label="group.name"
+                :value="group.id"
+              />
+            </el-select>
+          </el-form-item>
         </div>
+        <p v-if="form.target_mode === 'group'" class="target-help">
+          节点组在「分组与标签」中维护；订阅只会写入该组内且已被订阅包含的节点。
+        </p>
         <el-form-item label="规则条件（每行一条）" required>
           <el-input
             v-model="rulesText"
@@ -315,7 +377,7 @@ onMounted(load)
           />
         </el-form-item>
         <p class="rule-help">
-          这里只写匹配条件，不要填写策略名称；目标节点会自动附加。支持 DOMAIN、DOMAIN-SUFFIX、DOMAIN-KEYWORD、GEOSITE、GEOIP、IP-CIDR 等常见类型。
+          这里只写匹配条件，不要填写策略名称；目标节点或节点组会自动附加。支持 DOMAIN、DOMAIN-SUFFIX、DOMAIN-KEYWORD、GEOSITE、GEOIP、IP-CIDR 等常见类型。
         </p>
         <el-checkbox v-model="form.enabled">启用此规则集</el-checkbox>
       </el-form>
@@ -348,7 +410,7 @@ onMounted(load)
 
 .template-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
 }
@@ -446,6 +508,13 @@ onMounted(load)
 }
 
 .rule-help {
+  margin: -8px 0 14px;
+  color: #8b8a86;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.target-help {
   margin: -8px 0 14px;
   color: #8b8a86;
   font-size: 11px;

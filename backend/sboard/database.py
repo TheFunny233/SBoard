@@ -45,10 +45,22 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     if engine.dialect.name == "sqlite":
-        columns = {column["name"] for column in inspect(engine).get_columns("subscriptions")}
-        if "token" not in columns:
-            with engine.begin() as connection:
+        inspector = inspect(engine)
+        subscription_columns = {column["name"] for column in inspector.get_columns("subscriptions")}
+        rule_columns = {column["name"] for column in inspector.get_columns("rule_sets")}
+        with engine.begin() as connection:
+            if "token" not in subscription_columns:
                 connection.execute(text("ALTER TABLE subscriptions ADD COLUMN token VARCHAR(100)"))
+            if "group_id" not in rule_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE rule_sets ADD COLUMN group_id VARCHAR(36) "
+                        "REFERENCES groups(id) ON DELETE SET NULL"
+                    )
+                )
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_rule_sets_group_id ON rule_sets (group_id)")
+            )
 
 
 def get_db() -> Generator[Session, None, None]:

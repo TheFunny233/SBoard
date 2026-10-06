@@ -11,7 +11,7 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from sboard.models import Node, RuleSet, Subscription
+from sboard.models import Group, Node, RuleSet, Subscription
 
 
 @dataclass(slots=True)
@@ -195,24 +195,66 @@ def _rule_with_target(condition: str, target: str) -> str:
     return ",".join([*parts, target])
 
 
+def _unique_proxy_group_name(base: str, used_names: set[str]) -> str:
+    name = base.strip() or "Route"
+    candidate = name
+    suffix = 2
+    while candidate in used_names:
+        candidate = f"{name} ({suffix})"
+        suffix += 1
+    used_names.add(candidate)
+    return candidate
+
+
 def _managed_rules(
     db: Session,
     included_node_ids: set[str],
     names: dict[str, str],
-) -> tuple[list[str], list[str]]:
+    used_names: set[str],
+) -> tuple[list[str], list[str], list[dict[str, Any]]]:
     rule_sets = db.scalars(
         select(RuleSet)
-        .options(selectinload(RuleSet.target_node))
+        .options(
+            selectinload(RuleSet.target_node),
+            selectinload(RuleSet.target_group).selectinload(Group.nodes),
+        )
         .where(RuleSet.enabled.is_(True))
         .order_by(RuleSet.sort_order, RuleSet.name, RuleSet.id)
     ).all()
     rules: list[str] = []
     warnings: list[str] = []
+    routing_groups: list[dict[str, Any]] = []
+    group_targets: dict[str, str] = {}
     for rule_set in rule_sets:
         if rule_set.target_mode == "direct":
             target = "DIRECT"
         elif rule_set.target_mode == "reject":
             target = "REJECT"
+        elif rule_set.target_mode == "group":
+            if rule_set.target_group is None:
+                warnings.append(
+                    f"Rule set {rule_set.name} skipped because its target group no longer exists"
+                )
+                continue
+            target = group_targets.get(rule_set.target_group.id, "")
+            if not target:
+                member_names = [
+                    names[node.id]
+                    for node in sorted(
+                        rule_set.target_group.nodes,
+                        key=lambda node: (node.sort_order, node.name, node.id),
+                    )
+                    if node.id in included_node_ids
+                ]
+                if not member_names:
+                    warnings.append(
+                        f"Rule set {rule_set.name} skipped because target group "
+                        f"{rule_set.target_group.name} has no nodes in this subscription"
+                    )
+                    continue
+                target = _unique_proxy_group_name(rule_set.target_group.name, used_names)
+                group_targets[rule_set.target_group.id] = target
+                routing_groups.append({"name": target, "type": "select", "proxies": member_names})
         elif rule_set.node_id and rule_set.node_id in included_node_ids:
             target = names[rule_set.node_id]
         else:
@@ -220,8 +262,10 @@ def _managed_rules(
                 f"Rule set {rule_set.name} skipped because its target node is not in this subscription"
             )
             continue
-        rules.extend(_rule_with_target(condition, target) for condition in rule_set.rules_json or [])
-    return rules, warnings
+        rules.extend(
+            _rule_with_target(condition, target) for condition in rule_set.rules_json or []
+        )
+    return rules, warnings, routing_groups
 
 
 def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscription:
@@ -267,7 +311,11 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
     else:
         proxy_groups.append({"name": group_name, "type": "select", "proxies": ["DIRECT"]})
 
-    managed_rules, rule_warnings = _managed_rules(db, set(included), names)
+    used_names = set(proxy_names) | {group_name, auto_group_name, "DIRECT", "REJECT"}
+    managed_rules, rule_warnings, routing_groups = _managed_rules(
+        db, set(included), names, used_names
+    )
+    proxy_groups.extend(routing_groups)
     warnings.extend(rule_warnings)
     raw_rules = config.get("rules")
     subscription_rules = raw_rules if isinstance(raw_rules, list) and raw_rules else []

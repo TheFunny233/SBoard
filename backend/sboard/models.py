@@ -175,10 +175,14 @@ class RuleSet(TimestampMixin, Base):
     node_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("nodes.id", ondelete="SET NULL"), index=True
     )
+    group_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("groups.id", ondelete="SET NULL"), index=True
+    )
     rules_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
     target_node: Mapped[Node | None] = relationship()
+    target_group: Mapped[Group | None] = relationship()
 
 
 class Group(TimestampMixin, Base):
