@@ -21,7 +21,7 @@ def test_import_and_generate_subscriptions(
     assert preview.status_code == 200
     assert preview.json()["items"][0]["node"]["protocol"] == "vless"
     assert preview.json()["items"][0]["node"]["name"] == "SBoard - Tokyo"
-    assert preview.json()["items"][0]["node"]["flow"] == "xtls-rprx-vision"
+    assert preview.json()["items"][0]["node"]["flow"] is None
     assert preview.json()["items"][0]["node"]["extra"] == {
         "client_fingerprint": "firefox",
         "spider_x": "/robots.txt",
@@ -49,8 +49,12 @@ def test_import_and_generate_subscriptions(
 
     clash = client.get(f"/subscribe/clash/{token}")
     assert clash.status_code == 200
+    assert clash.headers["content-disposition"] == (
+        "attachment; filename=default; filename*=UTF-8''default"
+    )
     document = yaml.safe_load(clash.text)
     assert document["proxies"][0]["type"] == "vless"
+    assert "flow" not in document["proxies"][0]
     assert document["proxies"][0]["reality-opts"]["public-key"] == "public-key"
     assert document["proxies"][0]["reality-opts"]["spider-x"] == "/robots.txt"
     assert document["proxy-groups"]
@@ -64,10 +68,38 @@ def test_import_and_generate_subscriptions(
     assert "fp=firefox" in decoded
     assert "spx=%2Frobots.txt" in decoded
 
+    renamed = client.patch(
+        f"/api/v1/subscriptions/{subscription['subscription']['id']}",
+        headers=admin_headers,
+        json={"name": "个人设备"},
+    )
+    assert renamed.status_code == 200
+    renamed_clash = client.get(f"/subscribe/clash/{token}")
+    assert renamed_clash.headers["content-disposition"] == (
+        "attachment; filename=sboard; filename*=UTF-8''%E4%B8%AA%E4%BA%BA%E8%AE%BE%E5%A4%87"
+    )
+
     cached = client.get(
         f"/subscribe/clash/{token}", headers={"If-None-Match": clash.headers["etag"]}
     )
     assert cached.status_code == 304
+
+
+def test_import_preserves_explicit_vless_flow(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    link = (
+        "vless://11111111-1111-1111-1111-111111111111@example.com:443"
+        "?security=reality&type=tcp&flow=xtls-rprx-vision&sni=example.com"
+        "&pbk=public-key#Vision"
+    )
+    preview = client.post(
+        "/api/v1/nodes/import",
+        headers=admin_headers,
+        json={"mode": "preview", "links": [link]},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["items"][0]["node"]["flow"] == "xtls-rprx-vision"
 
 
 def test_managed_node_uses_agent_status(client: TestClient, admin_headers: dict[str, str]) -> None:

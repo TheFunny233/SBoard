@@ -145,7 +145,7 @@ class Node(TimestampMixin, Base):
     sni: Mapped[str | None] = mapped_column(String(255))
     public_key: Mapped[str | None] = mapped_column(Text)
     short_id: Mapped[str | None] = mapped_column(String(100))
-    flow: Mapped[str | None] = mapped_column(String(100), default="xtls-rprx-vision")
+    flow: Mapped[str | None] = mapped_column(String(100))
     network: Mapped[str | None] = mapped_column(String(50))
     security: Mapped[str | None] = mapped_column(String(50))
     path: Mapped[str | None] = mapped_column(Text)

@@ -113,7 +113,7 @@ class NodeFields(ApiModel):
     sni: str | None = Field(default=None, max_length=255)
     public_key: str | None = None
     short_id: str | None = Field(default=None, max_length=100)
-    flow: str | None = Field(default="xtls-rprx-vision", max_length=100)
+    flow: str | None = Field(default=None, max_length=100)
     network: str | None = Field(default=None, max_length=50)
     security: str | None = Field(default=None, max_length=50)
     path: str | None = None

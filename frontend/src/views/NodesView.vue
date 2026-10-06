@@ -49,7 +49,7 @@ function emptyNode(): NodePayload {
     sni: '',
     public_key: '',
     short_id: '',
-    flow: 'xtls-rprx-vision',
+    flow: '',
     network: 'tcp',
     security: 'reality',
     path: '',

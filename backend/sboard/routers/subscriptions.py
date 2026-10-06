@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, Response, status
 from fastapi.responses import PlainTextResponse
@@ -183,17 +185,35 @@ def _subscription_response(
     content: str,
     etag: str,
     media_type: str,
-    filename: str,
+    subscription_name: str,
+    extension: str,
     if_none_match: str | None,
 ) -> Response:
     headers = {
         "ETag": f'"{etag}"',
         "Cache-Control": "no-store",
-        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Content-Disposition": _content_disposition(subscription_name, extension),
     }
     if if_none_match and if_none_match.strip('"') == etag:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
     return PlainTextResponse(content=content, media_type=media_type, headers=headers)
+
+
+def _subscription_filename(name: str, extension: str) -> tuple[str, str]:
+    display_name = name.strip() or "SBoard"
+    full_name = (
+        display_name if display_name.lower().endswith(extension) else f"{display_name}{extension}"
+    )
+    ascii_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", display_name).strip("-._") or "sboard"
+    fallback = ascii_stem if ascii_stem.lower().endswith(extension) else f"{ascii_stem}{extension}"
+    return fallback, quote(full_name, safe="")
+
+
+def _content_disposition(name: str, extension: str) -> str:
+    fallback, encoded = _subscription_filename(name, extension)
+    # Keep the ASCII fallback unquoted for Clash Verge Rev compatibility.
+    # filename* carries the exact UTF-8 name for clients that support RFC 5987.
+    return f"attachment; filename={fallback}; filename*=UTF-8''{encoded}"
 
 
 @public_router.get("/clash/{token}")
@@ -210,7 +230,10 @@ def public_clash_subscription(
         content=generated.content,
         etag=generated.etag,
         media_type="text/yaml",
-        filename="sboard-clash.yaml",
+        subscription_name=subscription.name,
+        # Clash Verge uses the response filename as the profile's display
+        # name, so keep it identical to the name configured in SBoard.
+        extension="",
         if_none_match=if_none_match,
     )
 
@@ -229,6 +252,7 @@ def public_v2ray_subscription(
         content=generated.content,
         etag=generated.etag,
         media_type="text/plain",
-        filename="sboard-v2ray.txt",
+        subscription_name=subscription.name,
+        extension=".txt",
         if_none_match=if_none_match,
     )

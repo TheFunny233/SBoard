@@ -59,7 +59,6 @@ def _parse_standard_uri(link: str, protocol: str) -> dict[str, Any]:
         _name(parsed.fragment, protocol, parsed.hostname, parsed.port),
     )
     security = (_first(query, "security") or "").lower()
-    default_flow = "xtls-rprx-vision" if protocol == "vless" and security == "reality" else None
     node.update(
         {
             "uuid": unquote(parsed.username or "") or None,
@@ -68,7 +67,9 @@ def _parse_standard_uri(link: str, protocol: str) -> dict[str, Any]:
             "sni": _first(query, "sni", "serverName"),
             "public_key": _first(query, "pbk", "publicKey"),
             "short_id": _first(query, "sid", "shortId"),
-            "flow": _first(query, "flow") or default_flow,
+            # Flow changes the VLESS handshake and must be copied exactly from
+            # the source link.  Reality does not imply Vision.
+            "flow": _first(query, "flow"),
             "network": _first(query, "type", "network") or "tcp",
             "security": security or None,
             "path": _first(query, "path"),

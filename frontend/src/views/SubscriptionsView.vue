@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CopyDocument, Plus, Refresh, View } from '@element-plus/icons-vue'
+import { CopyDocument, EditPen, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { onMounted, ref } from 'vue'
 
@@ -16,6 +16,8 @@ const nodes = ref<NodeRecord[]>([])
 const groups = ref<Group[]>([])
 const tags = ref<Tag[]>([])
 const createOpen = ref(false)
+const editingId = ref('')
+const existingConfig = ref<Record<string, unknown>>({})
 const secretOpen = ref(false)
 const previewOpen = ref(false)
 const previewLoading = ref(false)
@@ -55,6 +57,8 @@ async function load(): Promise<void> {
 }
 
 function openCreate(): void {
+  editingId.value = ''
+  existingConfig.value = {}
   form.value = {
     name: '',
     include_all_nodes: true,
@@ -63,6 +67,23 @@ function openCreate(): void {
     tag_ids: [],
     group_name: 'Proxy',
     include_auto: true,
+  }
+  createOpen.value = true
+}
+
+function openEdit(subscription: Subscription): void {
+  editingId.value = subscription.id
+  existingConfig.value = { ...subscription.config }
+  form.value = {
+    name: subscription.name,
+    include_all_nodes: subscription.include_all_nodes,
+    node_ids: [...subscription.node_ids],
+    group_ids: [...subscription.group_ids],
+    tag_ids: [...subscription.tag_ids],
+    group_name:
+      typeof subscription.config.group_name === 'string' ? subscription.config.group_name : 'Proxy',
+    include_auto:
+      typeof subscription.config.include_auto === 'boolean' ? subscription.config.include_auto : true,
   }
   createOpen.value = true
 }
@@ -81,30 +102,36 @@ function subscriptionUrl(subscription: Subscription, format: 'clash' | 'v2ray'):
     : ''
 }
 
-async function createSubscription(): Promise<void> {
+async function saveSubscription(): Promise<void> {
   if (!form.value.name.trim()) {
     ElMessage.warning('请输入订阅名称')
     return
   }
   saving.value = true
   try {
-    const result = await api.createSubscription({
-      name: form.value.name,
-      enabled: true,
+    const payload = {
+      name: form.value.name.trim(),
       include_all_nodes: form.value.include_all_nodes,
       node_ids: form.value.node_ids,
       group_ids: form.value.group_ids,
       tag_ids: form.value.tag_ids,
       config: {
+        ...existingConfig.value,
         group_name: form.value.group_name,
         include_auto: form.value.include_auto,
       },
-    })
+    }
+    if (editingId.value) {
+      await api.updateSubscription(editingId.value, payload)
+      ElMessage.success('订阅已更新；客户端下次刷新会使用新名称和配置')
+    } else {
+      const result = await api.createSubscription({ ...payload, enabled: true })
+      showSecret(result.token, result.urls)
+    }
     createOpen.value = false
-    showSecret(result.token, result.urls)
     await load()
   } catch (reason) {
-    ElMessage.error(reason instanceof Error ? reason.message : '创建失败')
+    ElMessage.error(reason instanceof Error ? reason.message : '保存失败')
   } finally {
     saving.value = false
   }
@@ -219,10 +246,11 @@ onMounted(load)
             <el-switch :model-value="row.enabled" aria-label="启用订阅" @change="toggle(row)" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="310" fixed="right">
           <template #default="{ row }: { row: Subscription }">
             <div class="row-actions">
               <el-button size="small" :icon="View" @click="openPreview(row)">预览</el-button>
+              <el-button size="small" :icon="EditPen" @click="openEdit(row)">编辑</el-button>
               <el-button size="small" @click="rotate(row)">重置 Token</el-button>
               <el-dropdown trigger="click">
                 <el-button size="small" aria-label="更多操作">•••</el-button>
@@ -241,10 +269,16 @@ onMounted(load)
       </EmptyState>
     </div>
 
-    <el-dialog v-model="createOpen" title="创建订阅" width="min(620px, 94vw)" destroy-on-close>
-      <el-form label-position="top" @submit.prevent="createSubscription">
+    <el-dialog
+      v-model="createOpen"
+      :title="editingId ? '编辑订阅' : '创建订阅'"
+      width="min(620px, 94vw)"
+      destroy-on-close
+    >
+      <el-form label-position="top" @submit.prevent="saveSubscription">
         <el-form-item label="订阅名称" required>
           <el-input v-model="form.name" placeholder="例如：个人设备" />
+          <div class="field-hint">同时作为 Clash 导入后显示的配置名称。</div>
         </el-form-item>
         <el-form-item>
           <el-checkbox v-model="form.include_all_nodes">包含全部启用节点</el-checkbox>
@@ -279,7 +313,9 @@ onMounted(load)
       </el-form>
       <template #footer>
         <el-button @click="createOpen = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="createSubscription">创建订阅</el-button>
+        <el-button type="primary" :loading="saving" @click="saveSubscription">
+          {{ editingId ? '保存修改' : '创建订阅' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -374,6 +410,13 @@ onMounted(load)
   font-size: 12px;
 }
 
+.field-hint {
+  margin-top: 5px;
+  color: #9b9a97;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .el-form :deep(.el-select) {
   width: 100%;
 }
@@ -457,4 +500,3 @@ pre {
   }
 }
 </style>
-
