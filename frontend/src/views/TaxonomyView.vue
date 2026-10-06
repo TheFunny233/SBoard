@@ -8,6 +8,8 @@ import PageHeader from '../components/PageHeader.vue'
 import type { Group, Tag } from '../types'
 
 const loading = ref(false)
+const groupSaving = ref(false)
+const tagSaving = ref(false)
 const groups = ref<Group[]>([])
 const tags = ref<Tag[]>([])
 const groupName = ref('')
@@ -30,24 +32,42 @@ async function load(): Promise<void> {
 }
 
 async function addGroup(): Promise<void> {
-  if (!groupName.value.trim()) return
+  if (groupSaving.value) return
+  const name = groupName.value.trim()
+  if (!name) {
+    ElMessage.warning('请输入分组名称')
+    return
+  }
+  groupSaving.value = true
   try {
-    await api.createGroup({ name: groupName.value, description: null, sort_order: groups.value.length })
+    await api.createGroup({ name, description: null, sort_order: groups.value.length })
     groupName.value = ''
     await load()
+    ElMessage.success('分组已创建')
   } catch (reason) {
     ElMessage.error(reason instanceof Error ? reason.message : '创建分组失败')
+  } finally {
+    groupSaving.value = false
   }
 }
 
 async function addTag(): Promise<void> {
-  if (!tagName.value.trim()) return
+  if (tagSaving.value) return
+  const name = tagName.value.trim()
+  if (!name) {
+    ElMessage.warning('请输入标签名称')
+    return
+  }
+  tagSaving.value = true
   try {
-    await api.createTag({ name: tagName.value, color: '#e3e1db' })
+    await api.createTag({ name, color: '#e3e1db' })
     tagName.value = ''
     await load()
+    ElMessage.success('标签已创建')
   } catch (reason) {
     ElMessage.error(reason instanceof Error ? reason.message : '创建标签失败')
+  } finally {
+    tagSaving.value = false
   }
 }
 
@@ -122,7 +142,7 @@ onMounted(load)
         </div>
         <div class="quick-add">
           <el-input v-model="groupName" placeholder="新分组名称" @keyup.enter="addGroup" />
-          <el-button :icon="Plus" aria-label="添加分组" @click="addGroup" />
+          <el-button :icon="Plus" :loading="groupSaving" @click="addGroup">新建</el-button>
         </div>
         <div class="item-list">
           <div v-for="group in groups" :key="group.id" class="item-row block-row">
@@ -148,7 +168,7 @@ onMounted(load)
         </div>
         <div class="quick-add">
           <el-input v-model="tagName" placeholder="新标签名称" @keyup.enter="addTag" />
-          <el-button :icon="Plus" aria-label="添加标签" @click="addTag" />
+          <el-button :icon="Plus" :loading="tagSaving" @click="addTag">新建</el-button>
         </div>
         <div class="item-list">
           <div v-for="tag in tags" :key="tag.id" class="item-row tag-row block-row">
@@ -279,4 +299,3 @@ onMounted(load)
   }
 }
 </style>
-

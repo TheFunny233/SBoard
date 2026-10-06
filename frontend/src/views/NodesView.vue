@@ -23,13 +23,19 @@ const protocols: NodeProtocol[] = [
 const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
+const groupSaving = ref(false)
 const nodes = ref<NodeRecord[]>([])
 const selectedNodes = ref<NodeRecord[]>([])
 const agents = ref<Agent[]>([])
 const groups = ref<Group[]>([])
 const tags = ref<Tag[]>([])
 const dialogOpen = ref(false)
+const groupDialogOpen = ref(false)
 const editingId = ref<string | null>(null)
+const groupingNodeIds = ref<string[]>([])
+const groupAssignmentNodeId = ref<string | null>(null)
+const assignCreatedGroupToForm = ref(false)
+const newGroup = ref({ name: '', description: '' })
 const filters = ref({ keyword: '', protocol: '', source_type: '', enabled: '' })
 let refreshTimer: number | undefined
 
@@ -95,6 +101,13 @@ function openCreate(): void {
   editingId.value = null
   form.value = emptyNode()
   dialogOpen.value = true
+}
+
+function openGroupCreate(node?: NodeRecord, assignToForm = false): void {
+  groupAssignmentNodeId.value = node?.id || null
+  assignCreatedGroupToForm.value = assignToForm
+  newGroup.value = { name: '', description: '' }
+  groupDialogOpen.value = true
 }
 
 function openEdit(node: NodeRecord): void {
@@ -191,13 +204,69 @@ async function removeSelected(): Promise<void> {
   }
 }
 
-function generateUuid(): void {
-  form.value.uuid = crypto.randomUUID()
+async function updateNodeGroups(
+  node: NodeRecord,
+  groupIds: string[],
+  notify = true,
+): Promise<boolean> {
+  if (
+    node.group_ids.length === groupIds.length &&
+    node.group_ids.every((groupId) => groupIds.includes(groupId))
+  ) {
+    return true
+  }
+  groupingNodeIds.value = [...groupingNodeIds.value, node.id]
+  try {
+    const updated = await api.updateNode(node.id, { group_ids: groupIds })
+    const index = nodes.value.findIndex((item) => item.id === node.id)
+    if (index >= 0) nodes.value[index] = updated
+    if (notify) ElMessage.success('节点分组已更新')
+    return true
+  } catch (reason) {
+    ElMessage.error(reason instanceof Error ? reason.message : '更新节点分组失败')
+    return false
+  } finally {
+    groupingNodeIds.value = groupingNodeIds.value.filter((nodeId) => nodeId !== node.id)
+  }
 }
 
-function groupNames(ids: string[]): string {
-  const names = groups.value.filter((group) => ids.includes(group.id)).map((group) => group.name)
-  return names.join('、') || '未分组'
+async function createGroup(): Promise<void> {
+  if (groupSaving.value) return
+  const name = newGroup.value.name.trim()
+  if (!name) {
+    ElMessage.warning('请输入分组名称')
+    return
+  }
+  groupSaving.value = true
+  try {
+    const created = await api.createGroup({
+      name,
+      description: newGroup.value.description.trim() || null,
+      sort_order: groups.value.length,
+    })
+    groups.value = [...groups.value, created].sort(
+      (left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name),
+    )
+    if (assignCreatedGroupToForm.value && !form.value.group_ids.includes(created.id)) {
+      form.value.group_ids = [...form.value.group_ids, created.id]
+    }
+    if (groupAssignmentNodeId.value) {
+      const node = nodes.value.find((item) => item.id === groupAssignmentNodeId.value)
+      if (node && !node.group_ids.includes(created.id)) {
+        await updateNodeGroups(node, [...node.group_ids, created.id], false)
+      }
+    }
+    groupDialogOpen.value = false
+    ElMessage.success('分组已创建')
+  } catch (reason) {
+    ElMessage.error(reason instanceof Error ? reason.message : '创建分组失败')
+  } finally {
+    groupSaving.value = false
+  }
+}
+
+function generateUuid(): void {
+  form.value.uuid = crypto.randomUUID()
 }
 
 onMounted(() => {
@@ -214,6 +283,7 @@ onUnmounted(() => {
   <div class="page">
     <PageHeader title="节点" description="统一管理 SBoardNode 托管节点与外部导入节点；外部节点显示 TCP 可达性。">
       <el-button type="primary" :icon="Plus" @click="openCreate">添加节点</el-button>
+      <el-button :icon="Plus" @click="openGroupCreate()">新建分组</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
       <el-button @click="$router.push('/import')">批量导入</el-button>
       <el-button
@@ -285,9 +355,30 @@ onUnmounted(() => {
             {{ row.network || 'tcp' }}{{ row.reality ? ' / reality' : row.tls ? ' / tls' : '' }}
           </template>
         </el-table-column>
-        <el-table-column label="分组" min-width="130">
+        <el-table-column label="分组" min-width="190">
           <template #default="{ row }: { row: NodeRecord }">
-            <span class="muted">{{ groupNames(row.group_ids) }}</span>
+            <el-select
+              class="inline-group-select"
+              :model-value="row.group_ids"
+              multiple
+              filterable
+              clearable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="选择分组"
+              :loading="groupingNodeIds.includes(row.id)"
+              @change="updateNodeGroups(row, $event)"
+            >
+              <el-option
+                v-for="group in groups"
+                :key="group.id"
+                :label="group.name"
+                :value="group.id"
+              />
+              <template #footer>
+                <el-button text :icon="Plus" @click="openGroupCreate(row)">新建分组</el-button>
+              </template>
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="116" fixed="right">
@@ -303,6 +394,35 @@ onUnmounted(() => {
         <el-button type="primary" @click="openCreate">添加节点</el-button>
       </EmptyState>
     </div>
+
+    <el-dialog
+      v-model="groupDialogOpen"
+      title="新建分组"
+      width="min(460px, 92vw)"
+      destroy-on-close
+    >
+      <el-form label-position="top" @submit.prevent="createGroup">
+        <el-form-item label="分组名称" required>
+          <el-input
+            v-model="newGroup.name"
+            autofocus
+            placeholder="例如：AI 高纯净度"
+          />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input
+            v-model="newGroup.description"
+            type="textarea"
+            :rows="3"
+            placeholder="可选"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="groupDialogOpen = false">取消</el-button>
+        <el-button type="primary" :loading="groupSaving" @click="createGroup">创建分组</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="dialogOpen"
@@ -352,6 +472,11 @@ onUnmounted(() => {
           <el-form-item label="分组">
             <el-select v-model="form.group_ids" multiple clearable placeholder="可选">
               <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
+              <template #footer>
+                <el-button text :icon="Plus" @click="openGroupCreate(undefined, true)">
+                  新建分组
+                </el-button>
+              </template>
             </el-select>
           </el-form-item>
           <el-form-item label="标签">
@@ -465,6 +590,14 @@ onUnmounted(() => {
 
 .row-actions {
   display: flex;
+}
+
+.inline-group-select {
+  width: 100%;
+}
+
+.inline-group-select :deep(.el-select__wrapper) {
+  min-height: 30px;
 }
 
 .form-grid {
