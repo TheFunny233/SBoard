@@ -69,7 +69,7 @@ def _resolve_target(
             status_code=422,
             detail={
                 "code": "target_not_allowed",
-                "message": "DIRECT and REJECT targets cannot have node_id or group_id",
+                "message": "Proxy, DIRECT and REJECT targets cannot have node_id or group_id",
             },
         )
     return None, None

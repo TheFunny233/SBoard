@@ -212,6 +212,7 @@ def _managed_rules(
     included_node_ids: set[str],
     names: dict[str, str],
     used_names: set[str],
+    main_group_name: str,
 ) -> tuple[list[str], list[str], list[dict[str, Any]]]:
     rule_sets = db.scalars(
         select(RuleSet)
@@ -231,6 +232,8 @@ def _managed_rules(
             target = "DIRECT"
         elif rule_set.target_mode == "reject":
             target = "REJECT"
+        elif rule_set.target_mode == "proxy":
+            target = main_group_name
         elif rule_set.target_mode == "group":
             if rule_set.target_group is None:
                 warnings.append(
@@ -327,7 +330,7 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
 
     used_names = set(proxy_names) | {group_name, auto_group_name, "DIRECT", "REJECT"}
     managed_rules, rule_warnings, routing_groups = _managed_rules(
-        db, set(included), names, used_names
+        db, set(included), names, used_names, group_name
     )
     proxy_groups.extend(routing_groups)
     warnings.extend(rule_warnings)

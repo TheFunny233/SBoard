@@ -10,13 +10,14 @@ from sboard.main import app
 
 
 @pytest.fixture
-def client(tmp_path) -> Generator[TestClient, None, None]:  # type: ignore[no-untyped-def]
+def client(tmp_path, monkeypatch) -> Generator[TestClient, None, None]:  # type: ignore[no-untyped-def]
     database_path = tmp_path / "test.db"
     engine = create_engine(
         f"sqlite:///{database_path.as_posix()}", connect_args={"check_same_thread": False}
     )
     testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr("sboard.database.engine", engine)
 
     def override_db() -> Generator[Session, None, None]:
         db = testing_session()

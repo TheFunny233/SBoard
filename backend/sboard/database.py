@@ -81,6 +81,10 @@ def init_db() -> None:
             connection.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_rule_sets_group_id ON rule_sets (group_id)")
             )
+    from sboard.services.geosite_migration import migrate_geosite_rules
+
+    with Session(engine) as db:
+        migrate_geosite_rules(db)
 
 
 def get_db() -> Generator[Session, None, None]:

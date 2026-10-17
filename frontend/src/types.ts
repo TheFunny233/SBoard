@@ -128,7 +128,7 @@ export interface BatchDeleteResult {
   missing_ids: string[]
 }
 
-export type RuleTargetMode = 'node' | 'group' | 'direct' | 'reject'
+export type RuleTargetMode = 'node' | 'group' | 'proxy' | 'direct' | 'reject'
 
 export interface RuleSet {
   id: string

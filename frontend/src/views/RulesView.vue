@@ -75,6 +75,7 @@ function openEdit(rule: RuleSet): void {
 }
 
 function targetLabel(rule: RuleSet): string {
+  if (rule.target_mode === 'proxy') return '订阅主策略'
   if (rule.target_mode === 'direct') return 'DIRECT'
   if (rule.target_mode === 'reject') return 'REJECT'
   if (rule.target_mode === 'group') return rule.target_group_name || '目标节点组已删除'
@@ -188,8 +189,12 @@ onMounted(load)
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="条件" width="90">
-          <template #default="{ row }: { row: RuleSet }">{{ row.rules.length }} 条</template>
+        <el-table-column label="匹配条件" min-width="230">
+          <template #default="{ row }: { row: RuleSet }">
+            <span class="condition-label" :title="row.rules.join('\n')">
+              {{ row.rules[0] }}{{ row.rules.length > 1 ? `（共 ${row.rules.length} 条）` : '' }}
+            </span>
+          </template>
         </el-table-column>
         <el-table-column label="优先级" width="90" prop="sort_order" />
         <el-table-column label="启用" width="76">
@@ -234,6 +239,7 @@ onMounted(load)
             <el-select v-model="form.target_mode" @change="onTargetModeChange">
               <el-option label="指定节点" value="node" />
               <el-option label="指定节点组" value="group" />
+              <el-option label="订阅主策略（Proxy）" value="proxy" />
               <el-option label="DIRECT（直连）" value="direct" />
               <el-option label="REJECT（拒绝）" value="reject" />
             </el-select>
@@ -261,6 +267,9 @@ onMounted(load)
         </div>
         <p v-if="form.target_mode === 'group'" class="target-help">
           节点组在「分组与标签」中维护，可独立设置自动测速；订阅只会写入该组内已启用且被订阅包含的节点。
+        </p>
+        <p v-if="form.target_mode === 'proxy'" class="target-help">
+          使用各订阅自己的主策略组；Crypto 等需要稳定出口的服务，建议在客户端为主策略固定节点。
         </p>
         <el-form-item label="规则条件（每行一条）" required>
           <el-input
@@ -314,6 +323,12 @@ onMounted(load)
 
 .target-label {
   color: #4e5e64;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.condition-label {
+  overflow-wrap: anywhere;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
 }

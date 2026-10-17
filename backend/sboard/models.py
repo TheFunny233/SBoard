@@ -89,6 +89,14 @@ class TimestampMixin:
     )
 
 
+class DataMigration(Base):
+    __tablename__ = "data_migrations"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Agent(TimestampMixin, Base):
     __tablename__ = "agents"
 
@@ -169,7 +177,7 @@ class RuleSet(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(100))
-    # Legacy preset identity, retained so existing databases and saved rules stay compatible.
+    # Identity retained across the one-time migration from legacy presets to Geosite categories.
     template_key: Mapped[str | None] = mapped_column(String(50), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

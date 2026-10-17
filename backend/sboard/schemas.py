@@ -210,7 +210,7 @@ class NodeBatchDeleteResult(ApiModel):
     missing_ids: list[str]
 
 
-RuleTargetMode = Literal["node", "group", "direct", "reject"]
+RuleTargetMode = Literal["node", "group", "proxy", "direct", "reject"]
 SUPPORTED_RULE_TYPES = {
     "DOMAIN",
     "DOMAIN-SUFFIX",
@@ -272,8 +272,8 @@ class RuleSetCreate(ApiModel):
             raise ValueError("node target requires node_id")
         if self.target_mode == "group" and (not self.group_id or self.node_id):
             raise ValueError("group target requires group_id")
-        if self.target_mode in {"direct", "reject"} and (self.node_id or self.group_id):
-            raise ValueError("DIRECT and REJECT targets cannot have node_id or group_id")
+        if self.target_mode in {"proxy", "direct", "reject"} and (self.node_id or self.group_id):
+            raise ValueError("proxy, DIRECT and REJECT targets cannot have node_id or group_id")
         return self
 
 
