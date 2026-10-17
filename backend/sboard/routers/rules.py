@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from sboard.database import get_db
 from sboard.models import Group, Node, RuleSet
-from sboard.schemas import RuleSetCreate, RuleSetRead, RuleSetUpdate
+from sboard.schemas import DefaultRulesRequest, RuleSetCreate, RuleSetRead, RuleSetUpdate
 from sboard.security import require_admin
+from sboard.services.rule_templates import RULE_TEMPLATES
 
 from .helpers import not_found
 
@@ -102,6 +103,54 @@ def create_rule(payload: RuleSetCreate, db: Session = Depends(get_db)) -> RuleSe
     db.commit()
     db.refresh(rule)
     return _rule_to_read(rule)
+
+
+@router.get("/templates")
+def list_templates() -> list[dict]:
+    return RULE_TEMPLATES
+
+
+@router.post("/defaults", response_model=list[RuleSetRead])
+def apply_defaults(
+    payload: DefaultRulesRequest, db: Session = Depends(get_db)
+) -> list[RuleSetRead]:
+    # Resolve all targets before changing any rules so a bad selection is atomic.
+    _, ai_group = _resolve_target(db, "group", None, payload.ai_group_id)
+    _, bulk_group = _resolve_target(db, "group", None, payload.bulk_group_id)
+    applied = []
+    for template in RULE_TEMPLATES:
+        rule = db.scalar(select(RuleSet).where(RuleSet.template_key == template["key"]))
+        if rule is None:
+            # Adopt the original presets when upgrading an existing installation.
+            rule = db.scalar(
+                select(RuleSet)
+                .where(RuleSet.template_key.is_(None), RuleSet.name == template["name"])
+                .order_by(RuleSet.created_at, RuleSet.id)
+                .limit(1)
+            )
+        if rule is None:
+            rule = RuleSet()
+            db.add(rule)
+        rule.template_key = template["key"]
+        rule.name = template["name"]
+        rule.description = template["description"]
+        rule.enabled = True
+        rule.sort_order = template["sort_order"]
+        rule.rules_json = template["rules"]
+        rule.target_mode = template["target_mode"]
+        rule.target_node = None
+        rule.target_group = (
+            ai_group
+            if template["key"] == "ai"
+            else bulk_group
+            if template["target_mode"] == "group"
+            else None
+        )
+        applied.append(rule)
+    db.commit()
+    for rule in applied:
+        db.refresh(rule)
+    return [_rule_to_read(rule) for rule in applied]
 
 
 @router.get("/{rule_id}", response_model=RuleSetRead)

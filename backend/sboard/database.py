@@ -48,7 +48,27 @@ def init_db() -> None:
         inspector = inspect(engine)
         subscription_columns = {column["name"] for column in inspector.get_columns("subscriptions")}
         rule_columns = {column["name"] for column in inspector.get_columns("rule_sets")}
+        group_columns = {column["name"] for column in inspector.get_columns("groups")}
         with engine.begin() as connection:
+            group_additions = {
+                "strategy": "VARCHAR(20) NOT NULL DEFAULT 'select'",
+                "test_url": "VARCHAR(2048) NOT NULL DEFAULT 'https://www.gstatic.com/generate_204'",
+                "test_interval": "INTEGER NOT NULL DEFAULT 300",
+                "test_tolerance": "INTEGER NOT NULL DEFAULT 50",
+            }
+            for name, definition in group_additions.items():
+                if name not in group_columns:
+                    connection.execute(text(f"ALTER TABLE groups ADD COLUMN {name} {definition}"))
+            if "template_key" not in rule_columns:
+                connection.execute(
+                    text("ALTER TABLE rule_sets ADD COLUMN template_key VARCHAR(50)")
+                )
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_rule_sets_template_key "
+                    "ON rule_sets (template_key)"
+                )
+            )
             if "token" not in subscription_columns:
                 connection.execute(text("ALTER TABLE subscriptions ADD COLUMN token VARCHAR(100)"))
             if "group_id" not in rule_columns:

@@ -15,12 +15,39 @@ SBoard/
 
 - SBoardNode Agent 创建、手工 Token 配置、状态与心跳
 - 托管节点和外部节点统一管理
-- 节点分组与标签
+- 节点启用 / 停用、分组与标签
+- 每个分组独立配置手动选择、自动测速（url-test）或故障转移（fallback）
 - VLESS、VMess、Trojan、Shadowsocks、Shadowsocks 2022、Hysteria2、TUIC 链接导入
 - Clash Meta YAML 与 V2Ray Base64 订阅
-- Clash Meta 站点分流规则，支持指定节点、直连、拒绝和常用站点模板
+- Clash Meta 站点分流规则，支持指定节点、节点组、直连、拒绝和一键默认分流
 - WireGuard 数据模型预留
 - Notion 风格管理界面，使用左侧导航和低饱和中性配色
+
+## 节点与分流配置
+
+1. 在“节点”列表直接切换“启用”开关。停用后，节点会从 Clash / V2Ray 订阅及所有策略组中移除，保留节点资料和分组关系，重新启用即可恢复。客户端需要刷新订阅；此开关不停止服务器上的 Xray 进程。
+2. 在“分组与标签”编辑 AI、大流量等组，分别选择“自动测速”或“故障转移”，并设置测速地址、间隔与切换容差。新建分组时也可设置。已有分组升级后保持原来的手动策略。
+3. 在“规则”点击“应用默认分流”，选择 AI 组和大流量组。应用会创建 / 更新内置预设，也会升级同名旧版预设；其他自定义规则保持不变。可反复应用而不重复创建。
+4. 更新客户端的 Clash Meta 订阅。各策略组只使用自身已启用且被当前订阅包含的成员；组为空时跳过对应规则，并在订阅预览中给出警告，流量继续匹配后续规则。
+
+默认分流按以下顺序匹配：
+
+| 流量 | 目标 |
+| --- | --- |
+| 局域网 / 私有地址 | DIRECT |
+| ChatGPT、Sora、Claude、Gemini、Grok、Perplexity 及 AI 静态资源 | AI 组 |
+| Static 静态资源、CDN、软件包、开发下载 | 大流量组 |
+| NSFW 图片和视频站点 | 大流量组 |
+| YouTube、社交媒体、流媒体与 Google 通用资源 | 大流量组 |
+| 中国大陆域名与 IP | DIRECT |
+| 其他国际站点（含 Discord、Medium、Crypto 等） | 订阅主策略 Proxy |
+
+AI 域名规则先于 Google 通用域名及大陆 IP 规则，避免专用流量被宽泛规则覆盖。
+自动测速在客户端执行，选择依据是连接延迟，不是下载带宽或 AI 解锁结果；AI 组仍需分配可用的纯净节点。
+策略字段遵循 [Mihomo url-test](https://wiki.metacubex.one/en/config/proxy-groups/url-test/) 与 [fallback](https://wiki.metacubex.one/en/config/proxy-groups/fallback/) 配置。
+上述策略与规则仅写入 Clash Meta YAML，V2Ray Base64 格式只包含启用节点的分享链接。
+
+启动时会自动为现有 SQLite 数据库补充分组策略和预设标识字段，无需重建数据库。
 
 ## 本地开发
 

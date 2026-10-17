@@ -6,83 +6,12 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
-import type { Group, NodeRecord, RuleSet, RuleSetPayload, RuleTargetMode } from '../types'
+import type { Group, NodeRecord, RuleSet, RuleSetPayload, RuleTargetMode, RuleTemplate } from '../types'
 
-interface RuleTemplate {
-  name: string
-  category: string
-  description: string
-  targetMode: RuleTargetMode
-  sortOrder: number
-  rules: string[]
-}
-
-const templates: RuleTemplate[] = [
-  {
-    name: '中国大陆与局域网',
-    category: '直连',
-    description: '中国大陆域名、IP 与局域网地址直接连接',
-    targetMode: 'direct',
-    sortOrder: -300,
-    rules: [
-      'GEOSITE,private',
-      'GEOIP,private,no-resolve',
-      'GEOSITE,cn',
-      'GEOIP,CN,no-resolve',
-    ],
-  },
-  {
-    name: 'AI 高纯净度',
-    category: 'AI',
-    description: 'OpenAI、Claude 与 Gemini；建议目标选择高纯净度节点组',
-    targetMode: 'group',
-    sortOrder: -200,
-    rules: [
-      'DOMAIN-SUFFIX,openai.com',
-      'DOMAIN-SUFFIX,chatgpt.com',
-      'DOMAIN-SUFFIX,oaistatic.com',
-      'DOMAIN-SUFFIX,oaiusercontent.com',
-      'DOMAIN-SUFFIX,claude.ai',
-      'DOMAIN-SUFFIX,anthropic.com',
-      'DOMAIN,gemini.google.com',
-      'DOMAIN,aistudio.google.com',
-      'DOMAIN-SUFFIX,generativelanguage.googleapis.com',
-    ],
-  },
-  {
-    name: '大流量与开发站点',
-    category: '通用代理',
-    description: 'YouTube、X、Instagram、Google、GitHub、GitLab 及常用开发资源',
-    targetMode: 'node',
-    sortOrder: -100,
-    rules: [
-      'DOMAIN-SUFFIX,youtube.com',
-      'DOMAIN-SUFFIX,youtu.be',
-      'DOMAIN-SUFFIX,googlevideo.com',
-      'DOMAIN-SUFFIX,ytimg.com',
-      'DOMAIN-SUFFIX,ggpht.com',
-      'DOMAIN-SUFFIX,x.com',
-      'DOMAIN-SUFFIX,twitter.com',
-      'DOMAIN-SUFFIX,twimg.com',
-      'DOMAIN-SUFFIX,instagram.com',
-      'DOMAIN-SUFFIX,cdninstagram.com',
-      'DOMAIN-SUFFIX,google.com',
-      'DOMAIN-SUFFIX,googleapis.com',
-      'DOMAIN-SUFFIX,gstatic.com',
-      'DOMAIN-SUFFIX,googleusercontent.com',
-      'DOMAIN-SUFFIX,github.com',
-      'DOMAIN-SUFFIX,githubusercontent.com',
-      'DOMAIN-SUFFIX,githubassets.com',
-      'DOMAIN-SUFFIX,github.io',
-      'DOMAIN-SUFFIX,gitlab.com',
-      'DOMAIN-SUFFIX,gitlab-static.net',
-      'DOMAIN-SUFFIX,npmjs.com',
-      'DOMAIN-SUFFIX,npmjs.org',
-      'DOMAIN-SUFFIX,docker.com',
-      'DOMAIN-SUFFIX,docker.io',
-    ],
-  },
-]
+const templates = ref<RuleTemplate[]>([])
+const defaultsOpen = ref(false)
+const defaultsSaving = ref(false)
+const defaultTargets = ref({ ai_group_id: '', bulk_group_id: '' })
 
 const loading = ref(false)
 const saving = ref(false)
@@ -112,14 +41,16 @@ const enabledNodes = computed(() => nodes.value.filter((node) => node.enabled))
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const [ruleList, nodePage, groupList] = await Promise.all([
+    const [ruleList, nodePage, groupList, templateList] = await Promise.all([
       api.rules(),
       api.nodes({ page_size: 500 }),
       api.groups(),
+      api.ruleTemplates(),
     ])
     rules.value = ruleList
     nodes.value = nodePage.items
     groups.value = groupList
+    templates.value = templateList
   } catch (reason) {
     ElMessage.error(reason instanceof Error ? reason.message : '无法加载规则')
   } finally {
@@ -133,8 +64,12 @@ function openCreate(template?: RuleTemplate): void {
     ...emptyForm(),
     name: template?.name || '',
     description: template?.description || null,
-    target_mode: template?.targetMode || 'node',
-    sort_order: template?.sortOrder || 0,
+    target_mode: template?.target_mode || 'node',
+    sort_order: template?.sort_order || 0,
+  }
+  if (template?.target_mode === 'group') {
+    const pattern = template.key === 'ai' ? /ai|纯净|人工智能/i : /大流量|bulk|通用/i
+    form.value.group_id = groups.value.find((group) => pattern.test(group.name))?.id || null
   }
   rulesText.value = template?.rules.join('\n') || ''
   dialogOpen.value = true
@@ -236,6 +171,33 @@ async function remove(rule: RuleSet): Promise<void> {
   }
 }
 
+function openDefaults(): void {
+  defaultTargets.value = {
+    ai_group_id: groups.value.find((group) => /ai|纯净|人工智能/i.test(group.name))?.id || '',
+    bulk_group_id: groups.value.find((group) => /大流量|bulk|通用/i.test(group.name))?.id || '',
+  }
+  defaultsOpen.value = true
+}
+
+async function applyDefaults(): Promise<void> {
+  if (defaultsSaving.value) return
+  if (!defaultTargets.value.ai_group_id || !defaultTargets.value.bulk_group_id) {
+    ElMessage.warning('请选择 AI 组和大流量组')
+    return
+  }
+  defaultsSaving.value = true
+  try {
+    await api.applyDefaultRules(defaultTargets.value)
+    defaultsOpen.value = false
+    ElMessage.success('默认分流已应用；请刷新客户端订阅')
+    await load()
+  } catch (reason) {
+    ElMessage.error(reason instanceof Error ? reason.message : '应用默认分流失败')
+  } finally {
+    defaultsSaving.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -243,6 +205,7 @@ onMounted(load)
   <div class="page">
     <PageHeader title="规则" description="为 Clash Meta 订阅设置按站点分流的目标节点或节点组。">
       <el-button type="primary" :icon="Plus" @click="openCreate()">添加规则</el-button>
+      <el-button :disabled="!groups.length" @click="openDefaults">应用默认分流</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </PageHeader>
 
@@ -250,7 +213,7 @@ onMounted(load)
       <div class="section-heading">
         <div>
           <h2>常用场景</h2>
-          <p>大陆流量默认直连；AI 使用高纯净度节点组，通用代理单独选择节点。</p>
+          <p>AI 使用专用组；Static、NSFW、下载与流媒体使用大流量组；大陆直连，其余国际站点使用订阅主策略。</p>
         </div>
       </div>
       <div class="template-grid">
@@ -315,6 +278,31 @@ onMounted(load)
       </EmptyState>
     </div>
 
+    <el-dialog v-model="defaultsOpen" title="应用默认分流" width="min(540px, 94vw)">
+      <el-form label-position="top" @submit.prevent="applyDefaults">
+        <el-form-item label="AI 专用节点组" required>
+          <el-select v-model="defaultTargets.ai_group_id" placeholder="选择 AI 组">
+            <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="大流量节点组" required>
+          <el-select v-model="defaultTargets.bulk_group_id" placeholder="选择大流量组">
+            <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
+          </el-select>
+        </el-form-item>
+        <p class="target-help">会创建或更新内置预设（含同名旧版预设），保留其他自定义规则。请先在「节点」中分配成员，在「分组与标签」中设置各组的测速策略。</p>
+        <ul class="default-summary">
+          <li v-for="preset in templates" :key="preset.key">
+            {{ preset.name }} → {{ preset.target_mode === 'direct' ? '直连' : preset.key === 'ai' ? 'AI 组' : '大流量组' }}（{{ preset.rules.length }} 条）
+          </li>
+        </ul>
+      </el-form>
+      <template #footer>
+        <el-button @click="defaultsOpen = false">取消</el-button>
+        <el-button type="primary" :loading="defaultsSaving" @click="applyDefaults">应用并更新预设</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog
       v-model="dialogOpen"
       :title="editingId ? '编辑规则' : '添加规则'"
@@ -364,7 +352,7 @@ onMounted(load)
           </el-form-item>
         </div>
         <p v-if="form.target_mode === 'group'" class="target-help">
-          节点组在「分组与标签」中维护；订阅只会写入该组内且已被订阅包含的节点。
+          节点组在「分组与标签」中维护，可独立设置自动测速；订阅只会写入该组内已启用且被订阅包含的节点。
         </p>
         <el-form-item label="规则条件（每行一条）" required>
           <el-input
@@ -390,6 +378,13 @@ onMounted(load)
 </template>
 
 <style scoped>
+.default-summary {
+  color: #787774;
+  font-size: 13px;
+  line-height: 1.9;
+  padding-left: 20px;
+}
+
 .template-section {
   margin-bottom: 12px;
   padding: 16px;

@@ -11,6 +11,7 @@ import type {
   Paged,
   RuleSet,
   RuleSetPayload,
+  RuleTemplate,
   Subscription,
   SubscriptionCreateResult,
   SubscriptionPreview,
@@ -52,6 +53,9 @@ export const api = {
     apiRequest<ImportResult>('/api/v1/nodes/import', { method: 'POST', body: json(payload) }),
 
   rules: () => apiRequest<RuleSet[]>('/api/v1/rules'),
+  ruleTemplates: () => apiRequest<RuleTemplate[]>('/api/v1/rules/templates'),
+  applyDefaultRules: (payload: { ai_group_id: string; bulk_group_id: string }) =>
+    apiRequest<RuleSet[]>('/api/v1/rules/defaults', { method: 'POST', body: json(payload) }),
   createRule: (payload: RuleSetPayload) =>
     apiRequest<RuleSet>('/api/v1/rules', { method: 'POST', body: json(payload) }),
   updateRule: (id: string, payload: Partial<RuleSetPayload>) =>
@@ -59,7 +63,7 @@ export const api = {
   deleteRule: (id: string) => apiRequest<void>(`/api/v1/rules/${id}`, { method: 'DELETE' }),
 
   groups: () => apiRequest<Group[]>('/api/v1/groups'),
-  createGroup: (payload: Pick<Group, 'name' | 'description' | 'sort_order'>) =>
+  createGroup: (payload: Pick<Group, 'name' | 'description' | 'sort_order'> & Partial<Group>) =>
     apiRequest<Group>('/api/v1/groups', { method: 'POST', body: json(payload) }),
   updateGroup: (id: string, payload: Partial<Group>) =>
     apiRequest<Group>(`/api/v1/groups/${id}`, { method: 'PATCH', body: json(payload) }),

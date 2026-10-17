@@ -49,6 +49,8 @@ def agent_to_read(agent: Agent) -> AgentRead:
 
 
 def node_online_status(node: Node) -> str:
+    if not node.enabled:
+        return "unknown"
     if node.source_type == "external":
         return external_node_status(node)
     if node.agent is None:

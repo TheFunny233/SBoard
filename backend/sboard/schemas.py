@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -316,7 +317,29 @@ class RuleSetRead(ApiModel):
     updated_at: datetime
 
 
-class GroupCreate(ApiModel):
+GroupStrategy = Literal["select", "url-test", "fallback"]
+
+
+def validate_test_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username:
+        raise ValueError("test_url must be an HTTP(S) URL without credentials")
+    return value
+
+
+class GroupStrategyFields(ApiModel):
+    strategy: GroupStrategy = "select"
+    test_url: str = Field(default="https://www.gstatic.com/generate_204", max_length=2048)
+    test_interval: int = Field(default=300, ge=30, le=86400)
+    test_tolerance: int = Field(default=50, ge=0, le=1000)
+
+    @field_validator("test_url")
+    @classmethod
+    def check_test_url(cls, value: str) -> str:
+        return validate_test_url(value)
+
+
+class GroupCreate(GroupStrategyFields):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
     sort_order: int = 0
@@ -326,22 +349,37 @@ class GroupUpdate(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
     sort_order: int | None = None
+    strategy: GroupStrategy | None = None
+    test_url: str | None = Field(default=None, max_length=2048)
+    test_interval: int | None = Field(default=None, ge=30, le=86400)
+    test_tolerance: int | None = Field(default=None, ge=0, le=1000)
+
+    @field_validator("test_url")
+    @classmethod
+    def check_test_url(cls, value: str | None) -> str | None:
+        return validate_test_url(value) if value is not None else value
 
     @model_validator(mode="after")
     def reject_nulls(self) -> GroupUpdate:
-        for field in {"name", "sort_order"} & self.model_fields_set:
+        required = {"name", "sort_order", "strategy", "test_url", "test_interval", "test_tolerance"}
+        for field in required & self.model_fields_set:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
 
 
-class GroupRead(ApiModel):
+class GroupRead(GroupStrategyFields):
     id: str
     name: str
     description: str | None
     sort_order: int
     created_at: datetime
     updated_at: datetime
+
+
+class DefaultRulesRequest(ApiModel):
+    ai_group_id: str = Field(min_length=1)
+    bulk_group_id: str = Field(min_length=1)
 
 
 class TagCreate(ApiModel):

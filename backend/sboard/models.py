@@ -169,6 +169,7 @@ class RuleSet(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(100))
+    template_key: Mapped[str | None] = mapped_column(String(50), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     target_mode: Mapped[str] = mapped_column(String(20), default="node")
@@ -192,6 +193,12 @@ class Group(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    strategy: Mapped[str] = mapped_column(String(20), default="select")
+    test_url: Mapped[str] = mapped_column(
+        String(2048), default="https://www.gstatic.com/generate_204"
+    )
+    test_interval: Mapped[int] = mapped_column(Integer, default=300)
+    test_tolerance: Mapped[int] = mapped_column(Integer, default=50)
 
     nodes: Mapped[list[Node]] = relationship(secondary=node_groups, back_populates="groups")
     subscriptions: Mapped[list[Subscription]] = relationship(

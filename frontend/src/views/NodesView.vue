@@ -7,6 +7,8 @@ import { api } from '../api'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatusLabel from '../components/StatusLabel.vue'
+import GroupPolicyFields from '../components/GroupPolicyFields.vue'
+import { defaultGroupPolicy } from '../groupPolicy'
 import type { Agent, Group, NodePayload, NodeProtocol, NodeRecord, Tag } from '../types'
 
 const protocols: NodeProtocol[] = [
@@ -33,6 +35,8 @@ const dialogOpen = ref(false)
 const groupDialogOpen = ref(false)
 const editingId = ref<string | null>(null)
 const groupingNodeIds = ref<string[]>([])
+const togglingNodeIds = ref<string[]>([])
+const newGroupPolicy = ref(defaultGroupPolicy())
 const groupAssignmentNodeId = ref<string | null>(null)
 const assignCreatedGroupToForm = ref(false)
 const newGroup = ref({ name: '', description: '' })
@@ -104,6 +108,7 @@ function openCreate(): void {
 }
 
 function openGroupCreate(node?: NodeRecord, assignToForm = false): void {
+  newGroupPolicy.value = defaultGroupPolicy()
   groupAssignmentNodeId.value = node?.id || null
   assignCreatedGroupToForm.value = assignToForm
   newGroup.value = { name: '', description: '' }
@@ -240,6 +245,7 @@ async function createGroup(): Promise<void> {
   groupSaving.value = true
   try {
     const created = await api.createGroup({
+      ...newGroupPolicy.value,
       name,
       description: newGroup.value.description.trim() || null,
       sort_order: groups.value.length,
@@ -262,6 +268,24 @@ async function createGroup(): Promise<void> {
     ElMessage.error(reason instanceof Error ? reason.message : '创建分组失败')
   } finally {
     groupSaving.value = false
+  }
+}
+
+async function toggleNode(node: NodeRecord, enabled: boolean): Promise<void> {
+  if (togglingNodeIds.value.includes(node.id)) return
+  togglingNodeIds.value.push(node.id)
+  try {
+    const updated = await api.updateNode(node.id, { enabled })
+    const index = nodes.value.findIndex((item) => item.id === node.id)
+    if (index >= 0) nodes.value[index] = updated
+    if (filters.value.enabled && filters.value.enabled !== String(enabled)) {
+      nodes.value = nodes.value.filter((item) => item.id !== node.id)
+    }
+    ElMessage.success(enabled ? '节点已启用；刷新客户端订阅后生效' : '节点已停用；刷新客户端订阅后移除')
+  } catch (reason) {
+    ElMessage.error(reason instanceof Error ? reason.message : '切换节点状态失败')
+  } finally {
+    togglingNodeIds.value = togglingNodeIds.value.filter((id) => id !== node.id)
   }
 }
 
@@ -329,7 +353,7 @@ onUnmounted(() => {
         <el-table-column type="selection" width="48" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }: { row: NodeRecord }">
-            <StatusLabel :status="row.online_status" />
+            <StatusLabel :status="row.enabled ? row.online_status : 'stopped'" :text="row.enabled ? '' : '已停用'" />
           </template>
         </el-table-column>
         <el-table-column label="节点" min-width="210">
@@ -381,6 +405,16 @@ onUnmounted(() => {
             </el-select>
           </template>
         </el-table-column>
+        <el-table-column label="启用" width="76" fixed="right">
+          <template #default="{ row }: { row: NodeRecord }">
+            <el-switch
+              :model-value="row.enabled"
+              :loading="togglingNodeIds.includes(row.id)"
+              :aria-label="`启用节点 ${row.name}`"
+              @change="toggleNode(row, Boolean($event))"
+            />
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="116" fixed="right">
           <template #default="{ row }: { row: NodeRecord }">
             <div class="row-actions">
@@ -417,6 +451,7 @@ onUnmounted(() => {
             placeholder="可选"
           />
         </el-form-item>
+        <GroupPolicyFields v-model="newGroupPolicy" />
       </el-form>
       <template #footer>
         <el-button @click="groupDialogOpen = false">取消</el-button>

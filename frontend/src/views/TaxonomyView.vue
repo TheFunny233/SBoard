@@ -5,10 +5,11 @@ import { onMounted, ref } from 'vue'
 
 import { api } from '../api'
 import PageHeader from '../components/PageHeader.vue'
+import GroupPolicyFields from '../components/GroupPolicyFields.vue'
+import { defaultGroupPolicy, groupStrategyLabel } from '../groupPolicy'
 import type { Group, Tag } from '../types'
 
 const loading = ref(false)
-const groupSaving = ref(false)
 const tagSaving = ref(false)
 const groups = ref<Group[]>([])
 const tags = ref<Tag[]>([])
@@ -19,6 +20,9 @@ const editType = ref<'group' | 'tag'>('group')
 const editId = ref('')
 const editName = ref('')
 const editDescription = ref('')
+const editPolicy = ref(defaultGroupPolicy())
+const creatingGroup = ref(false)
+const editSaving = ref(false)
 
 async function load(): Promise<void> {
   loading.value = true
@@ -31,24 +35,18 @@ async function load(): Promise<void> {
   }
 }
 
-async function addGroup(): Promise<void> {
-  if (groupSaving.value) return
+function addGroup(): void {
   const name = groupName.value.trim()
   if (!name) {
     ElMessage.warning('请输入分组名称')
     return
   }
-  groupSaving.value = true
-  try {
-    await api.createGroup({ name, description: null, sort_order: groups.value.length })
-    groupName.value = ''
-    await load()
-    ElMessage.success('分组已创建')
-  } catch (reason) {
-    ElMessage.error(reason instanceof Error ? reason.message : '创建分组失败')
-  } finally {
-    groupSaving.value = false
-  }
+  creatingGroup.value = true
+  editType.value = 'group'
+  editName.value = name
+  editDescription.value = ''
+  editPolicy.value = defaultGroupPolicy()
+  editOpen.value = true
 }
 
 async function addTag(): Promise<void> {
@@ -72,14 +70,20 @@ async function addTag(): Promise<void> {
 }
 
 function openGroup(group: Group): void {
+  creatingGroup.value = false
   editType.value = 'group'
   editId.value = group.id
   editName.value = group.name
   editDescription.value = group.description || ''
+  editPolicy.value = {
+    strategy: group.strategy, test_url: group.test_url,
+    test_interval: group.test_interval, test_tolerance: group.test_tolerance,
+  }
   editOpen.value = true
 }
 
 function openTag(tag: Tag): void {
+  creatingGroup.value = false
   editType.value = 'tag'
   editId.value = tag.id
   editName.value = tag.name
@@ -88,16 +92,23 @@ function openTag(tag: Tag): void {
 }
 
 async function saveEdit(): Promise<void> {
+  if (editSaving.value) return
   if (!editName.value.trim()) {
     ElMessage.warning('名称不能为空')
     return
   }
+  editSaving.value = true
   try {
     if (editType.value === 'group') {
-      await api.updateGroup(editId.value, {
+      const payload = {
         name: editName.value,
         description: editDescription.value || null,
-      })
+        ...editPolicy.value,
+      }
+      if (creatingGroup.value) {
+        await api.createGroup({ ...payload, sort_order: groups.value.length })
+        groupName.value = ''
+      } else await api.updateGroup(editId.value, payload)
     } else {
       await api.updateTag(editId.value, { name: editName.value })
     }
@@ -105,6 +116,8 @@ async function saveEdit(): Promise<void> {
     await load()
   } catch (reason) {
     ElMessage.error(reason instanceof Error ? reason.message : '保存失败')
+  } finally {
+    editSaving.value = false
   }
 }
 
@@ -129,7 +142,7 @@ onMounted(load)
 
 <template>
   <div class="page" v-loading="loading">
-    <PageHeader title="分组与标签" description="分组用于地域和订阅组织，标签用于轻量筛选与用途标记。" />
+    <PageHeader title="分组与标签" description="为各分流组独立设置手动选择、自动测速或故障转移，标签用于筛选。" />
 
     <section class="taxonomy-grid">
       <div class="surface taxonomy-panel">
@@ -142,14 +155,14 @@ onMounted(load)
         </div>
         <div class="quick-add">
           <el-input v-model="groupName" placeholder="新分组名称" @keyup.enter="addGroup" />
-          <el-button :icon="Plus" :loading="groupSaving" @click="addGroup">新建</el-button>
+          <el-button :icon="Plus" @click="addGroup">新建</el-button>
         </div>
         <div class="item-list">
           <div v-for="group in groups" :key="group.id" class="item-row block-row">
             <span class="drag-handle" aria-hidden="true">⋮⋮</span>
             <div>
               <strong>{{ group.name }}</strong>
-              <span>{{ group.description || '无说明' }}</span>
+              <span>{{ groupStrategyLabel(group.strategy) }} · {{ group.description || '无说明' }}</span>
             </div>
             <el-button text :icon="Edit" aria-label="编辑分组" @click="openGroup(group)" />
             <el-button text :icon="Delete" aria-label="删除分组" @click="remove('group', group)" />
@@ -185,7 +198,7 @@ onMounted(load)
 
     <el-dialog
       v-model="editOpen"
-      :title="editType === 'group' ? '编辑分组' : '编辑标签'"
+      :title="editType === 'group' ? (creatingGroup ? '新建分组' : '编辑分组') : '编辑标签'"
       width="min(480px, 92vw)"
     >
       <el-form label-position="top" @submit.prevent="saveEdit">
@@ -195,10 +208,11 @@ onMounted(load)
         <el-form-item v-if="editType === 'group'" label="说明">
           <el-input v-model="editDescription" type="textarea" :rows="3" />
         </el-form-item>
+        <GroupPolicyFields v-if="editType === 'group'" v-model="editPolicy" />
       </el-form>
       <template #footer>
         <el-button @click="editOpen = false">取消</el-button>
-        <el-button type="primary" @click="saveEdit">保存</el-button>
+        <el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button>
       </template>
     </el-dialog>
   </div>

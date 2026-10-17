@@ -50,13 +50,12 @@ def selected_nodes(db: Session, subscription: Subscription) -> list[Node]:
     )
 
 
-def _unique_names(nodes: list[Node]) -> dict[str, str]:
-    counts: dict[str, int] = {}
+def _unique_names(nodes: list[Node], reserved: set[str] | None = None) -> dict[str, str]:
+    used = set(reserved or ())
     names: dict[str, str] = {}
     for node in nodes:
         base = node.name.strip() or f"{node.protocol}-{node.address}:{node.port}"
-        counts[base] = counts.get(base, 0) + 1
-        names[node.id] = base if counts[base] == 1 else f"{base} ({counts[base]})"
+        names[node.id] = _unique_proxy_group_name(base, used)
     return names
 
 
@@ -254,7 +253,17 @@ def _managed_rules(
                     continue
                 target = _unique_proxy_group_name(rule_set.target_group.name, used_names)
                 group_targets[rule_set.target_group.id] = target
-                routing_groups.append({"name": target, "type": "select", "proxies": member_names})
+                group = rule_set.target_group
+                policy: dict[str, Any] = {
+                    "name": target,
+                    "type": group.strategy,
+                    "proxies": member_names,
+                }
+                if group.strategy in {"url-test", "fallback"}:
+                    policy.update(url=group.test_url, interval=group.test_interval, lazy=False)
+                if group.strategy == "url-test":
+                    policy["tolerance"] = group.test_tolerance
+                routing_groups.append(policy)
         elif rule_set.node_id and rule_set.node_id in included_node_ids:
             target = names[rule_set.node_id]
         else:
@@ -270,7 +279,13 @@ def _managed_rules(
 
 def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscription:
     nodes = selected_nodes(db, subscription)
-    names = _unique_names(nodes)
+    config = subscription.config_json or {}
+    reserved = {"DIRECT", "REJECT"}
+    group_name = _unique_proxy_group_name(str(config.get("group_name") or "Proxy"), reserved)
+    auto_group_name = _unique_proxy_group_name(
+        str(config.get("auto_group_name") or "Auto"), reserved
+    )
+    names = _unique_names(nodes, reserved)
     proxies: list[dict[str, Any]] = []
     included: list[str] = []
     warnings: list[str] = []
@@ -287,9 +302,6 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
         proxy_names.append(names[node.id])
         included.append(node.id)
 
-    config = subscription.config_json or {}
-    group_name = str(config.get("group_name") or "Proxy")
-    auto_group_name = str(config.get("auto_group_name") or "Auto")
     test_url = str(config.get("test_url") or "https://www.gstatic.com/generate_204")
     interval = int(config.get("test_interval") or 300)
     include_auto = bool(config.get("include_auto", True))

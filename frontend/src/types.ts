@@ -162,8 +162,24 @@ export interface Group {
   name: string
   description: string | null
   sort_order: number
+  strategy: 'select' | 'url-test' | 'fallback'
+  test_url: string
+  test_interval: number
+  test_tolerance: number
   created_at: string
   updated_at: string
+}
+
+export type GroupPolicy = Pick<Group, 'strategy' | 'test_url' | 'test_interval' | 'test_tolerance'>
+
+export interface RuleTemplate {
+  key: string
+  name: string
+  category: string
+  description: string
+  target_mode: RuleTargetMode
+  sort_order: number
+  rules: string[]
 }
 
 export interface Tag {
