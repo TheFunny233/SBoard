@@ -172,17 +172,6 @@ export interface Group {
 
 export type GroupPolicy = Pick<Group, 'strategy' | 'test_url' | 'test_interval' | 'test_tolerance'>
 
-export interface RuleTemplate {
-  key: string
-  name: string
-  category: string
-  description: string
-  target_mode: RuleTargetMode
-  sort_order: number
-  rules: string[]
-  apply_by_default: boolean
-}
-
 export interface Tag {
   id: string
   name: string

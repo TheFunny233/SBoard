@@ -19,7 +19,7 @@ SBoard/
 - 每个分组独立配置手动选择、自动测速（url-test）或故障转移（fallback）
 - VLESS、VMess、Trojan、Shadowsocks、Shadowsocks 2022、Hysteria2、TUIC 链接导入
 - Clash Meta YAML 与 V2Ray Base64 订阅
-- Clash Meta 站点分流规则，支持指定节点、节点组、直连、拒绝和一键默认分流
+- 手动配置 Clash Meta 站点分流规则，支持指定节点、节点组、直连与拒绝
 - WireGuard 数据模型预留
 - Notion 风格管理界面，使用左侧导航和低饱和中性配色
 
@@ -27,34 +27,19 @@ SBoard/
 
 1. 在“节点”列表直接切换“启用”开关。停用后，节点会从 Clash / V2Ray 订阅及所有策略组中移除，保留节点资料和分组关系，重新启用即可恢复。客户端需要刷新订阅；此开关不停止服务器上的 Xray 进程。
 2. 在“分组与标签”编辑 AI、大流量等组，分别选择“自动测速”或“故障转移”，并设置测速地址、间隔与切换容差。新建分组时也可设置。已有分组升级后保持原来的手动策略。
-3. 在“规则”点击“一键应用推荐规则”，选择 AI 组和大流量组。按钮优先沿用已有规则的目标组，否则识别 AI / 大流量分组；目标明确时直接应用，分组缺失或存在多个候选时会打开选择窗口。也可点击“选择目标组”手动指定。应用会创建 / 更新内置预设，也会升级同名旧版预设；其他自定义规则保持不变。可反复应用而不重复创建。
+3. 在“规则”点击“添加规则”，手动填写匹配条件，并选择目标节点、节点组、DIRECT 或 REJECT。可设置优先级、启用或停用规则集；数值越小越先匹配。
 4. 更新客户端的 Clash Meta 订阅。各策略组只使用自身已启用且被当前订阅包含的成员；组为空时跳过对应规则，并在订阅预览中给出警告，流量继续匹配后续规则。
 
-默认分流按以下顺序匹配：
+面板不提供内置推荐规则或自动应用预设。以前已保存的规则会保留，可在规则列表中手动编辑、停用或删除。
+手动规则支持 `DOMAIN-SUFFIX`、`GEOSITE`、`GEOIP` 等类型。条件里只写匹配部分，例如 `GEOSITE,category-porn`，目标由面板自动附加；规则行为取决于你配置的顺序和目标。
+含 `GEOSITE` 的 Clash Meta 订阅会指定 MetaCubeX 完整 `geosite.dat` 数据源并开启每 24 小时自动更新。
+如果客户端已有精简版数据库并提示分类不存在，请在客户端更新 Geo 数据；部分客户端会覆盖订阅中的 GEO 设置，需要检查客户端自己的数据源。
 
-| 流量 | 目标 |
-| --- | --- |
-| 局域网 / 私有地址 | DIRECT |
-| 海外 AI 分类 `category-ai-!cn` + ChatGPT、Sora、Claude、Gemini 等域名补漏 | AI 组 |
-| `category-cdn-!cn`、`category-dev` + Static 静态资源、软件包和下载域名补漏 | 大流量组 |
-| `category-porn` + NSFW 图片和视频站点域名补漏 | 大流量组 |
-| `category-entertainment` + YouTube、社交媒体、流媒体与 Google 通用资源域名补漏 | 大流量组 |
-| 中国大陆域名与 IP | DIRECT |
-| 其他国际站点（含 Discord、Medium、Crypto 等） | 订阅主策略 Proxy |
-
-AI 域名与分类规则先于开发、CDN、娱乐和 Google 通用域名及大陆 IP 规则，避免专用流量被宽泛规则覆盖。
-规则页另提供可选模板：海外游戏 `category-games-!cn`、Crypto `category-cryptocurrency`、广告拦截 `category-ads-all`。
-这些模板需要单独添加，不包含在一键默认分流中；游戏 / Crypto 需手动指定合适的出口，优先于大流量分类。游戏联机与下载可能共用域名，分类不能按带宽或请求路径区分。
-
-含 `GEOSITE` 的 Clash Meta 订阅会指定 MetaCubeX **完整** `geosite.dat` 数据源并开启每 24 小时自动更新，避免精简数据库缺少分类。
-如果客户端已有旧版或精简版数据库，导入订阅后仍提示分类不存在，请在客户端更新 Geo 数据。部分客户端会覆盖订阅中的 GEO 设置，需要同时检查客户端自己的数据源。
-Geosite 是客户端使用的域名列表；域名补漏与分类匹配互补，不能保证覆盖所有新站点或共用 CDN 的内容。
-更新镜像不会擅自改写已有规则；升级后在“规则”重新点击“一键应用推荐规则”更新预设，再刷新客户端订阅。
 自动测速在客户端执行，选择依据是连接延迟，不是下载带宽或 AI 解锁结果；AI 组仍需分配可用的纯净节点。
 策略字段遵循 [Mihomo url-test](https://wiki.metacubex.one/en/config/proxy-groups/url-test/) 与 [fallback](https://wiki.metacubex.one/en/config/proxy-groups/fallback/) 配置。
 上述策略与规则仅写入 Clash Meta YAML，V2Ray Base64 格式只包含启用节点的分享链接。
 
-启动时会自动为现有 SQLite 数据库补充分组策略和预设标识字段，无需重建数据库。
+启动时会自动补充现有 SQLite 数据库所需的兼容字段，无需重建数据库。
 
 ## 本地开发
 

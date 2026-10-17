@@ -377,11 +377,6 @@ class GroupRead(GroupStrategyFields):
     updated_at: datetime
 
 
-class DefaultRulesRequest(ApiModel):
-    ai_group_id: str = Field(min_length=1)
-    bulk_group_id: str = Field(min_length=1)
-
-
 class TagCreate(ApiModel):
     name: str = Field(min_length=1, max_length=100)
     color: str | None = Field(default=None, max_length=30)

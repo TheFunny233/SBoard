@@ -169,6 +169,7 @@ class RuleSet(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(100))
+    # Legacy preset identity, retained so existing databases and saved rules stay compatible.
     template_key: Mapped[str | None] = mapped_column(String(50), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
