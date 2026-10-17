@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from sboard.models import Group, Node, RuleSet, Subscription
 
+GEOSITE_URL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+
 
 @dataclass(slots=True)
 class GeneratedSubscription:
@@ -335,6 +337,15 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
     if not any(rule.strip().upper().startswith("MATCH,") for rule in rules):
         rules.append(f"MATCH,{group_name}")
     document = {"proxies": proxies, "proxy-groups": proxy_groups, "rules": rules}
+    if any(rule.strip().upper().startswith("GEOSITE,") for rule in rules):
+        # category-* sets are absent from many lite databases. Use the full dataset.
+        document.update(
+            {
+                "geox-url": {"geosite": GEOSITE_URL},
+                "geo-auto-update": True,
+                "geo-update-interval": 24,
+            }
+        )
     content = yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=4096)
     return GeneratedSubscription(content=content, node_ids=included, warnings=warnings)
 

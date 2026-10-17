@@ -5,7 +5,8 @@ import yaml
 from sqlalchemy import create_engine, inspect, text
 
 from sboard import database
-from sboard.services.rule_templates import RULE_TEMPLATES
+from sboard.services.rule_templates import DEFAULT_RULE_TEMPLATES, RULE_TEMPLATES
+from sboard.services.subscriptions import GEOSITE_URL
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +85,7 @@ def test_independent_groups_defaults_and_node_toggle(client, admin_headers):  # 
     repeated = client.post("/api/v1/rules/defaults", headers=admin_headers, json=payload)
     assert {rule["id"] for rule in repeated.json()} == ids
     all_rules = client.get("/api/v1/rules", headers=admin_headers).json()
-    assert len(all_rules) == len(RULE_TEMPLATES) + 1
+    assert len(all_rules) == len(DEFAULT_RULE_TEMPLATES) + 1
     assert next(rule for rule in all_rules if rule["id"] == custom["id"]) == custom
     sub_result = client.post(
         "/api/v1/subscriptions", headers=admin_headers, json={"name": "all"}
@@ -124,6 +125,12 @@ def test_independent_groups_defaults_and_node_toggle(client, admin_headers):  # 
     ]:
         assert f"DOMAIN-SUFFIX,{domain},大流量" in document["rules"]
     rules = document["rules"]
+    assert document["geox-url"]["geosite"] == GEOSITE_URL
+    assert document["geo-auto-update"] is True
+    assert document["geo-update-interval"] == 24
+    assert rules.index("GEOSITE,category-ai-!cn,AI") < rules.index("GEOSITE,category-dev,大流量")
+    for category in ["category-porn", "category-cdn-!cn", "category-dev", "category-entertainment"]:
+        assert f"GEOSITE,{category},大流量" in rules
     assert rules.index("DOMAIN,gemini.google.com,AI") < rules.index(
         "DOMAIN-SUFFIX,google.com,大流量"
     )
@@ -207,6 +214,60 @@ def test_defaults_adopt_legacy_templates(client, admin_headers):  # type: ignore
     upgraded = next(rule for rule in applied if rule["id"] == legacy["id"])
     assert upgraded["target_mode"] == "group"
     assert upgraded["group_id"] == created["id"]
+    assert "GEOSITE,category-entertainment" in upgraded["rules"]
+
+
+def test_optional_templates_are_explicit_and_survive_reapplying_defaults(client, admin_headers):  # type: ignore[no-untyped-def]
+    templates = client.get("/api/v1/rules/templates", headers=admin_headers)
+    assert templates.status_code == 200
+    assert templates.json() == RULE_TEMPLATES
+    optional = {item["key"]: item for item in templates.json() if not item["apply_by_default"]}
+    assert set(optional) == {"games", "crypto", "ads"}
+    created = group(client, admin_headers, "Game")
+    optional_ids = []
+    for item in optional.values():
+        response = client.post(
+            "/api/v1/rules",
+            headers=admin_headers,
+            json={
+                "name": item["name"],
+                "target_mode": item["target_mode"],
+                "group_id": created["id"] if item["target_mode"] == "group" else None,
+                "rules": item["rules"],
+                "sort_order": item["sort_order"],
+            },
+        )
+        assert response.status_code == 201, response.text
+        optional_ids.append(response.json()["id"])
+    applied = client.post(
+        "/api/v1/rules/defaults",
+        headers=admin_headers,
+        json={
+            "ai_group_id": created["id"],
+            "bulk_group_id": created["id"],
+        },
+    )
+    assert applied.status_code == 200
+    assert len(applied.json()) == len(DEFAULT_RULE_TEMPLATES)
+    assert not set(optional_ids) & {rule["id"] for rule in applied.json()}
+    remaining = client.get("/api/v1/rules", headers=admin_headers).json()
+    assert set(optional_ids) <= {rule["id"] for rule in remaining}
+
+
+def test_plain_subscriptions_do_not_add_geodata_settings(client, admin_headers):  # type: ignore[no-untyped-def]
+    sub = client.post(
+        "/api/v1/subscriptions", headers=admin_headers, json={"name": "plain"}
+    ).json()["subscription"]
+    _, document = preview(client, admin_headers, sub)
+    assert "geox-url" not in document
+    assert "geo-auto-update" not in document
+    client.patch(
+        f"/api/v1/subscriptions/{sub['id']}",
+        headers=admin_headers,
+        json={"config": {"rules": ["GEOSITE,category-porn,REJECT"]}},
+    )
+    _, document = preview(client, admin_headers, sub)
+    assert document["geox-url"]["geosite"] == GEOSITE_URL
 
 
 def test_group_name_collisions_and_subscription_filter(client, admin_headers):  # type: ignore[no-untyped-def]

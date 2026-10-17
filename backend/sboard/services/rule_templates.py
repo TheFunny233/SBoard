@@ -5,7 +5,7 @@ def _domains(*domains: str) -> list[str]:
     return [f"DOMAIN-SUFFIX,{domain}" for domain in domains]
 
 
-RULE_TEMPLATES = [
+DEFAULT_RULE_TEMPLATES = [
     {
         "key": "private",
         "name": "局域网直连",
@@ -19,7 +19,7 @@ RULE_TEMPLATES = [
         "key": "ai",
         "name": "AI 高纯净度",
         "category": "AI",
-        "description": "ChatGPT、Sora、Claude、Gemini、Grok、Perplexity 及服务资源",
+        "description": "海外 AI 分类 + ChatGPT、Sora、Claude、Gemini 等域名补漏；优先于开发和 CDN 分类",
         "target_mode": "group",
         "sort_order": -400,
         "rules": _domains(
@@ -41,13 +41,14 @@ RULE_TEMPLATES = [
             "DOMAIN,gemini.google.com",
             "DOMAIN,aistudio.google.com",
             "DOMAIN,alkalimakersuite-pa.clients6.google.com",
+            "GEOSITE,category-ai-!cn",
         ],
     },
     {
         "key": "static",
         "name": "Static 静态资源与下载",
         "category": "大流量",
-        "description": "jsDelivr、Cloudflare CDN、npm、unpkg、Kali 与开发下载资源",
+        "description": "海外 CDN、开发资源分类 + npm、unpkg、Kali 等域名补漏",
         "target_mode": "group",
         "sort_order": -300,
         "rules": _domains(
@@ -70,13 +71,14 @@ RULE_TEMPLATES = [
             "gitlab-static.net",
             "docker.com",
             "docker.io",
-        ),
+        )
+        + ["GEOSITE,category-cdn-!cn", "GEOSITE,category-dev"],
     },
     {
         "key": "nsfw",
         "name": "NSFW 大流量",
         "category": "大流量",
-        "description": "成人内容与相关图片、视频资源使用大流量组",
+        "description": "category-porn 成人内容分类 + 常用站点与图片、视频资源域名补漏",
         "target_mode": "group",
         "sort_order": -300,
         "rules": _domains(
@@ -100,13 +102,14 @@ RULE_TEMPLATES = [
             "phncdn.com",
             "xvideos.com",
             "xhcdn.com",
-        ),
+        )
+        + ["GEOSITE,category-porn"],
     },
     {
         "key": "bulk",
         "name": "大流量与开发站点",
         "category": "大流量",
-        "description": "视频、社交媒体及 Google 通用资源；AI 专用域名优先匹配 AI 组",
+        "description": "海外娱乐分类 + 视频、社交媒体及 Google 资源；AI 分类优先匹配 AI 组",
         "target_mode": "group",
         "sort_order": -200,
         "rules": _domains(
@@ -137,7 +140,8 @@ RULE_TEMPLATES = [
             "byteoversea.com",
             "ibytedtos.com",
             "ibyteimg.com",
-        ),
+        )
+        + ["GEOSITE,category-entertainment"],
     },
     {
         "key": "china",
@@ -163,4 +167,40 @@ RULE_TEMPLATES = [
         )
         + ["GEOSITE,cn", "GEOIP,CN,no-resolve"],
     },
+]
+
+
+OPTIONAL_RULE_TEMPLATES = [
+    {
+        "key": "games",
+        "name": "海外游戏（可选）",
+        "category": "游戏",
+        "description": "海外游戏服务；请选择低延迟游戏组，规则优先于大流量分类。下载与联机可能共用域名",
+        "target_mode": "group",
+        "sort_order": -350,
+        "rules": ["GEOSITE,category-games-!cn"],
+    },
+    {
+        "key": "crypto",
+        "name": "Crypto 稳定出口（可选）",
+        "category": "Crypto",
+        "description": "加密货币服务；请选择稳定出口节点或专用组，避免随测速频繁切换 IP",
+        "target_mode": "group",
+        "sort_order": -350,
+        "rules": ["GEOSITE,category-cryptocurrency"],
+    },
+    {
+        "key": "ads",
+        "name": "广告拦截（可选）",
+        "category": "拦截",
+        "description": "广告域名分类；单独添加后生效，如影响网页功能可停用此规则集",
+        "target_mode": "reject",
+        "sort_order": -450,
+        "rules": ["GEOSITE,category-ads-all"],
+    },
+]
+
+RULE_TEMPLATES = [
+    *[{**template, "apply_by_default": True} for template in DEFAULT_RULE_TEMPLATES],
+    *[{**template, "apply_by_default": False} for template in OPTIONAL_RULE_TEMPLATES],
 ]

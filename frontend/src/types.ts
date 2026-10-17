@@ -180,6 +180,7 @@ export interface RuleTemplate {
   target_mode: RuleTargetMode
   sort_order: number
   rules: string[]
+  apply_by_default: boolean
 }
 
 export interface Tag {

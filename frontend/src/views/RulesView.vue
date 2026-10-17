@@ -37,6 +37,7 @@ function emptyForm(): RuleSetPayload {
 
 const form = ref<RuleSetPayload>(emptyForm())
 const enabledNodes = computed(() => nodes.value.filter((node) => node.enabled))
+const defaultTemplates = computed(() => templates.value.filter((template) => template.apply_by_default))
 
 async function load(): Promise<void> {
   loading.value = true
@@ -67,7 +68,7 @@ function openCreate(template?: RuleTemplate): void {
     target_mode: template?.target_mode || 'node',
     sort_order: template?.sort_order || 0,
   }
-  if (template?.target_mode === 'group') {
+  if (template?.target_mode === 'group' && template.apply_by_default) {
     const pattern = template.key === 'ai' ? /ai|纯净|人工智能/i : /大流量|bulk|通用/i
     form.value.group_id = groups.value.find((group) => pattern.test(group.name))?.id || null
   }
@@ -213,7 +214,7 @@ onMounted(load)
       <div class="section-heading">
         <div>
           <h2>常用场景</h2>
-          <p>AI 使用专用组；Static、NSFW、下载与流媒体使用大流量组；大陆直连，其余国际站点使用订阅主策略。</p>
+          <p>Geosite 分类覆盖 + 域名补漏：AI 走专用组，Static、NSFW 与娱乐走大流量组，大陆直连。</p>
         </div>
       </div>
       <div class="template-grid">
@@ -222,13 +223,18 @@ onMounted(load)
           :key="template.name"
           class="template-card"
           type="button"
+          :title="template.description"
           @click="openCreate(template)"
         >
-          <span>{{ template.category }}</span>
+          <span>{{ template.category }} · {{ template.apply_by_default ? '默认预设' : '可选，单独添加' }}</span>
           <strong>{{ template.name }}</strong>
           <small>{{ template.rules.length }} 条规则</small>
+          <small class="geosite-label">{{ template.rules.filter((rule) => rule.startsWith('GEOSITE,')).map((rule) => rule.slice(8)).join(' / ') }}</small>
         </button>
       </div>
+      <p class="geosite-help">
+        Clash Meta 订阅会指定完整 Geosite 数据源并每天更新。若客户端提示分类不存在，请更新客户端 Geo 数据；已有规则需重新「应用默认分流」升级。游戏、Crypto、广告拦截模板按需单独添加。
+      </p>
     </section>
 
     <div class="surface table-surface" v-loading="loading">
@@ -292,7 +298,7 @@ onMounted(load)
         </el-form-item>
         <p class="target-help">会创建或更新内置预设（含同名旧版预设），保留其他自定义规则。请先在「节点」中分配成员，在「分组与标签」中设置各组的测速策略。</p>
         <ul class="default-summary">
-          <li v-for="preset in templates" :key="preset.key">
+          <li v-for="preset in defaultTemplates" :key="preset.key">
             {{ preset.name }} → {{ preset.target_mode === 'direct' ? '直连' : preset.key === 'ai' ? 'AI 组' : '大流量组' }}（{{ preset.rules.length }} 条）
           </li>
         </ul>
@@ -383,6 +389,17 @@ onMounted(load)
   font-size: 13px;
   line-height: 1.9;
   padding-left: 20px;
+}
+
+.geosite-help {
+  margin: 12px 0 0;
+  color: #787774;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.geosite-label {
+  overflow-wrap: anywhere;
 }
 
 .template-section {

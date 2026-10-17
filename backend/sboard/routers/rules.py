@@ -8,7 +8,7 @@ from sboard.database import get_db
 from sboard.models import Group, Node, RuleSet
 from sboard.schemas import DefaultRulesRequest, RuleSetCreate, RuleSetRead, RuleSetUpdate
 from sboard.security import require_admin
-from sboard.services.rule_templates import RULE_TEMPLATES
+from sboard.services.rule_templates import DEFAULT_RULE_TEMPLATES, RULE_TEMPLATES
 
 from .helpers import not_found
 
@@ -118,7 +118,7 @@ def apply_defaults(
     _, ai_group = _resolve_target(db, "group", None, payload.ai_group_id)
     _, bulk_group = _resolve_target(db, "group", None, payload.bulk_group_id)
     applied = []
-    for template in RULE_TEMPLATES:
+    for template in DEFAULT_RULE_TEMPLATES:
         rule = db.scalar(select(RuleSet).where(RuleSet.template_key == template["key"]))
         if rule is None:
             # Adopt the original presets when upgrading an existing installation.

@@ -35,14 +35,21 @@ SBoard/
 | 流量 | 目标 |
 | --- | --- |
 | 局域网 / 私有地址 | DIRECT |
-| ChatGPT、Sora、Claude、Gemini、Grok、Perplexity 及 AI 静态资源 | AI 组 |
-| Static 静态资源、CDN、软件包、开发下载 | 大流量组 |
-| NSFW 图片和视频站点 | 大流量组 |
-| YouTube、社交媒体、流媒体与 Google 通用资源 | 大流量组 |
+| 海外 AI 分类 `category-ai-!cn` + ChatGPT、Sora、Claude、Gemini 等域名补漏 | AI 组 |
+| `category-cdn-!cn`、`category-dev` + Static 静态资源、软件包和下载域名补漏 | 大流量组 |
+| `category-porn` + NSFW 图片和视频站点域名补漏 | 大流量组 |
+| `category-entertainment` + YouTube、社交媒体、流媒体与 Google 通用资源域名补漏 | 大流量组 |
 | 中国大陆域名与 IP | DIRECT |
 | 其他国际站点（含 Discord、Medium、Crypto 等） | 订阅主策略 Proxy |
 
-AI 域名规则先于 Google 通用域名及大陆 IP 规则，避免专用流量被宽泛规则覆盖。
+AI 域名与分类规则先于开发、CDN、娱乐和 Google 通用域名及大陆 IP 规则，避免专用流量被宽泛规则覆盖。
+规则页另提供可选模板：海外游戏 `category-games-!cn`、Crypto `category-cryptocurrency`、广告拦截 `category-ads-all`。
+这些模板需要单独添加，不包含在一键默认分流中；游戏 / Crypto 需手动指定合适的出口，优先于大流量分类。游戏联机与下载可能共用域名，分类不能按带宽或请求路径区分。
+
+含 `GEOSITE` 的 Clash Meta 订阅会指定 MetaCubeX **完整** `geosite.dat` 数据源并开启每 24 小时自动更新，避免精简数据库缺少分类。
+如果客户端已有旧版或精简版数据库，导入订阅后仍提示分类不存在，请在客户端更新 Geo 数据。部分客户端会覆盖订阅中的 GEO 设置，需要同时检查客户端自己的数据源。
+Geosite 是客户端使用的域名列表；域名补漏与分类匹配互补，不能保证覆盖所有新站点或共用 CDN 的内容。
+更新镜像不会擅自改写已有规则；升级后在“规则”重新点击“应用默认分流”更新预设，再刷新客户端订阅。
 自动测速在客户端执行，选择依据是连接延迟，不是下载带宽或 AI 解锁结果；AI 组仍需分配可用的纯净节点。
 策略字段遵循 [Mihomo url-test](https://wiki.metacubex.one/en/config/proxy-groups/url-test/) 与 [fallback](https://wiki.metacubex.one/en/config/proxy-groups/fallback/) 配置。
 上述策略与规则仅写入 Clash Meta YAML，V2Ray Base64 格式只包含启用节点的分享链接。
