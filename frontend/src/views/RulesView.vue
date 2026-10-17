@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Delete, Edit, Plus, Refresh } from '@element-plus/icons-vue'
+import { Check, Delete, Edit, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 
@@ -38,6 +38,32 @@ function emptyForm(): RuleSetPayload {
 const form = ref<RuleSetPayload>(emptyForm())
 const enabledNodes = computed(() => nodes.value.filter((node) => node.enabled))
 const defaultTemplates = computed(() => templates.value.filter((template) => template.apply_by_default))
+const suggestedTargets = computed(() => ({
+  ai_group_id: suggestedGroup('ai'),
+  bulk_group_id: suggestedGroup('bulk'),
+}))
+
+function suggestedGroup(role: 'ai' | 'bulk'): string {
+  const keys = role === 'ai' ? ['ai'] : ['static', 'nsfw', 'bulk']
+  const names = templates.value.filter((template) => keys.includes(template.key)).map((template) => template.name)
+  const currentTargets = new Set(rules.value
+    .filter((rule) => names.includes(rule.name) && rule.target_mode === 'group' && groups.value.some((group) => group.id === rule.group_id))
+    .map((rule) => rule.group_id as string))
+  // Keep an existing consistent mapping; conflicting targets require a choice.
+  if (currentTargets.size) return currentTargets.size === 1 ? [...currentTargets][0]! : ''
+  const aliases = role === 'ai'
+    ? ['ai', 'ai组', 'ai高纯净度', '高纯净度', '人工智能']
+    : ['大流量', '大流量组', 'bulk', 'bulk组', '通用', '通用代理']
+  const exact = groups.value.filter((group) => aliases.includes(group.name.toLowerCase().replace(/\s+/g, '')))
+  const matches = exact.length ? exact : groups.value.filter((group) => role === 'ai'
+    ? /(^|[^a-z])ai([^a-z]|$)|纯净|人工智能/i.test(group.name)
+    : /大流量|(^|[^a-z])bulk([^a-z]|$)|通用/i.test(group.name))
+  return matches.length === 1 ? matches[0]!.id : ''
+}
+
+function groupName(id: string): string {
+  return groups.value.find((group) => group.id === id)?.name || '待选择节点组'
+}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -69,8 +95,7 @@ function openCreate(template?: RuleTemplate): void {
     sort_order: template?.sort_order || 0,
   }
   if (template?.target_mode === 'group' && template.apply_by_default) {
-    const pattern = template.key === 'ai' ? /ai|纯净|人工智能/i : /大流量|bulk|通用/i
-    form.value.group_id = groups.value.find((group) => pattern.test(group.name))?.id || null
+    form.value.group_id = suggestedGroup(template.key === 'ai' ? 'ai' : 'bulk') || null
   }
   rulesText.value = template?.rules.join('\n') || ''
   dialogOpen.value = true
@@ -173,11 +198,19 @@ async function remove(rule: RuleSet): Promise<void> {
 }
 
 function openDefaults(): void {
-  defaultTargets.value = {
-    ai_group_id: groups.value.find((group) => /ai|纯净|人工智能/i.test(group.name))?.id || '',
-    bulk_group_id: groups.value.find((group) => /大流量|bulk|通用/i.test(group.name))?.id || '',
-  }
+  defaultTargets.value = { ...suggestedTargets.value }
   defaultsOpen.value = true
+}
+
+async function applyRecommended(): Promise<void> {
+  if (loading.value || defaultsSaving.value) return
+  const targets = suggestedTargets.value
+  if (!targets.ai_group_id || !targets.bulk_group_id || targets.ai_group_id === targets.bulk_group_id) {
+    openDefaults()
+    return
+  }
+  defaultTargets.value = { ...targets }
+  await applyDefaults()
 }
 
 async function applyDefaults(): Promise<void> {
@@ -190,7 +223,7 @@ async function applyDefaults(): Promise<void> {
   try {
     await api.applyDefaultRules(defaultTargets.value)
     defaultsOpen.value = false
-    ElMessage.success('默认分流已应用；请刷新客户端订阅')
+    ElMessage.success('推荐规则已应用；请刷新客户端订阅')
     await load()
   } catch (reason) {
     ElMessage.error(reason instanceof Error ? reason.message : '应用默认分流失败')
@@ -205,10 +238,31 @@ onMounted(load)
 <template>
   <div class="page">
     <PageHeader title="规则" description="为 Clash Meta 订阅设置按站点分流的目标节点或节点组。">
-      <el-button type="primary" :icon="Plus" @click="openCreate()">添加规则</el-button>
-      <el-button :disabled="!groups.length" @click="openDefaults">应用默认分流</el-button>
+      <el-button :icon="Plus" @click="openCreate()">添加规则</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </PageHeader>
+
+    <section class="surface recommended-section">
+      <div>
+        <h2>推荐分流 · 一键配置</h2>
+        <p>按 Geosite 分类分流，并保留具体域名补漏。更新 {{ defaultTemplates.length || 6 }} 个内置预设，保留其他自定义规则。</p>
+      </div>
+      <div class="routing-summary">
+        <span>AI → <strong>{{ groupName(suggestedTargets.ai_group_id) }}</strong></span>
+        <span>Static / NSFW / 娱乐 → <strong>{{ groupName(suggestedTargets.bulk_group_id) }}</strong></span>
+        <span>大陆 / 局域网 → <strong>直连</strong></span>
+      </div>
+      <div class="recommended-actions">
+        <el-button type="primary" :icon="Check" :loading="defaultsSaving" :disabled="loading" @click="applyRecommended">
+          一键应用推荐规则
+        </el-button>
+        <el-button :disabled="loading || defaultsSaving" @click="openDefaults">选择目标组</el-button>
+      </div>
+      <p>优先沿用已有规则的目标组；无法明确识别时会让你选择。应用后刷新客户端订阅生效。</p>
+      <p v-if="!loading && !groups.length">
+        还没有节点组，请先在 <router-link to="/taxonomy">分组与标签</router-link> 创建，并在 <router-link to="/nodes">节点</router-link> 中分配成员。
+      </p>
+    </section>
 
     <section class="surface template-section">
       <div class="section-heading">
@@ -233,7 +287,7 @@ onMounted(load)
         </button>
       </div>
       <p class="geosite-help">
-        Clash Meta 订阅会指定完整 Geosite 数据源并每天更新。若客户端提示分类不存在，请更新客户端 Geo 数据；已有规则需重新「应用默认分流」升级。游戏、Crypto、广告拦截模板按需单独添加。
+        Clash Meta 订阅会指定完整 Geosite 数据源并每天更新。若客户端提示分类不存在，请更新客户端 Geo 数据；已有规则可用「一键应用推荐规则」升级。游戏、Crypto、广告拦截模板按需单独添加。
       </p>
     </section>
 
@@ -279,13 +333,14 @@ onMounted(load)
           </template>
         </el-table-column>
       </el-table>
-      <EmptyState v-else title="还没有分流规则" description="使用常用站点模板，或手动添加一组 Clash Meta 规则。">
-        <el-button type="primary" @click="openCreate()">添加第一条规则</el-button>
+      <EmptyState v-else title="还没有分流规则" description="点击上方「一键应用推荐规则」快速配置，也可以单独添加站点规则。">
+        <el-button @click="openCreate()">手动添加规则</el-button>
       </EmptyState>
     </div>
 
-    <el-dialog v-model="defaultsOpen" title="应用默认分流" width="min(540px, 94vw)">
+    <el-dialog v-model="defaultsOpen" title="选择推荐规则的目标组" width="min(540px, 94vw)">
       <el-form label-position="top" @submit.prevent="applyDefaults">
+        <p v-if="!groups.length" class="geosite-help">请先在 <router-link to="/taxonomy" @click="defaultsOpen = false">分组与标签</router-link> 创建 AI 和大流量组，再到节点页分配成员。</p>
         <el-form-item label="AI 专用节点组" required>
           <el-select v-model="defaultTargets.ai_group_id" placeholder="选择 AI 组">
             <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
@@ -305,7 +360,7 @@ onMounted(load)
       </el-form>
       <template #footer>
         <el-button @click="defaultsOpen = false">取消</el-button>
-        <el-button type="primary" :loading="defaultsSaving" @click="applyDefaults">应用并更新预设</el-button>
+        <el-button type="primary" :loading="defaultsSaving" :disabled="!defaultTargets.ai_group_id || !defaultTargets.bulk_group_id" @click="applyDefaults">应用推荐规则</el-button>
       </template>
     </el-dialog>
 
@@ -384,6 +439,48 @@ onMounted(load)
 </template>
 
 <style scoped>
+.recommended-section {
+  margin-bottom: 16px;
+  padding: 20px;
+}
+
+.recommended-section h2 {
+  margin: 0;
+  color: #37352f;
+  font-size: 17px;
+}
+
+.recommended-section p {
+  margin: 8px 0 0;
+  color: #787774;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.routing-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 16px 0;
+  color: #787774;
+  font-size: 12px;
+}
+
+.routing-summary strong {
+  color: #37352f;
+  font-weight: 550;
+}
+
+.recommended-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recommended-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 .default-summary {
   color: #787774;
   font-size: 13px;
