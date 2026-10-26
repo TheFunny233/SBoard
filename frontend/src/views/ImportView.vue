@@ -16,6 +16,9 @@ const namePrefix = ref('')
 const duplicatePolicy = ref<'skip' | 'create'>('skip')
 const loading = ref(false)
 const result = ref<ImportResult | null>(null)
+const backup = ref<Record<string, unknown> | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
+const backupFilename = ref('')
 
 const links = computed(() =>
   content.value
@@ -33,13 +36,17 @@ async function loadOptions(): Promise<void> {
 }
 
 async function run(mode: 'preview' | 'commit'): Promise<void> {
-  if (!links.value.length) {
+  if (!backup.value && !links.value.length) {
     ElMessage.warning('请粘贴至少一个节点链接')
     return
   }
   loading.value = true
   try {
-    result.value = await api.importNodes({
+    result.value = backup.value ? await api.importNodeBackup({
+      mode,
+      backup: backup.value,
+      duplicate_policy: duplicatePolicy.value,
+    }) : await api.importNodes({
       mode,
       links: links.value,
       group_ids: groupIds.value,
@@ -58,6 +65,39 @@ async function run(mode: 'preview' | 'commit'): Promise<void> {
   }
 }
 
+async function readFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const text = (await file.text()).replace(/^\uFEFF/, '')
+    if (file.name.toLowerCase().endsWith('.json')) {
+      const data: unknown = JSON.parse(text)
+      if (!data || typeof data !== 'object' || (data as { format?: string }).format !== 'sboard-nodes') {
+        throw new Error('请选择 SBoard 导出的节点 JSON 备份')
+      }
+      backup.value = data as Record<string, unknown>
+      backupFilename.value = file.name
+      content.value = ''
+    } else {
+      content.value = text
+      backup.value = null
+      backupFilename.value = ''
+    }
+    result.value = null
+  } catch (reason) {
+    ElMessage.error(reason instanceof Error ? reason.message : '读取文件失败')
+  } finally {
+    input.value = ''
+  }
+}
+
+function clearBackup(): void {
+  backup.value = null
+  backupFilename.value = ''
+  result.value = null
+}
+
 onMounted(loadOptions)
 </script>
 
@@ -65,8 +105,10 @@ onMounted(loadOptions)
   <div class="page">
     <PageHeader
       title="导入节点"
-      description="粘贴分享链接，先预览规范化结果，再一次性写入数据库。不会访问远程订阅 URL。"
+      description="粘贴分享链接，或选择导出的 TXT / JSON 文件，预览后导入。JSON 备份保留节点参数、启用状态、分组和标签。"
     >
+      <input ref="fileInput" type="file" accept=".json,.txt" hidden @change="readFile" />
+      <el-button :disabled="loading" @click="fileInput?.click()">选择导入文件</el-button>
       <el-button :icon="DocumentChecked" :loading="loading" @click="run('preview')">解析预览</el-button>
       <el-button type="primary" :icon="Upload" :loading="loading" @click="run('commit')">确认导入</el-button>
     </PageHeader>
@@ -75,12 +117,21 @@ onMounted(loadOptions)
       <div class="surface editor-panel">
         <div class="panel-heading">
           <div>
-            <h2 class="section-title">分享链接</h2>
-            <p class="section-note">每行一个，支持 VLESS、VMess、Trojan、SS、Hysteria2 与 TUIC。</p>
+            <h2 class="section-title">{{ backup ? '节点备份' : '分享链接' }}</h2>
+            <p class="section-note">{{ backup ? backupFilename : '每行一个，支持 VLESS、VMess、Trojan、SS、Hysteria2 与 TUIC。' }}</p>
           </div>
-          <span>{{ links.length }} 条</span>
+          <el-button v-if="backup" text :disabled="loading" @click="clearBackup">切换为分享链接</el-button>
+          <span v-else>{{ links.length }} 条</span>
         </div>
+        <el-alert
+          v-if="backup"
+          title="将恢复备份中的全部节点，保留停用状态、排序、分组和标签。同名分组和标签沿用现有设置；托管节点作为外部节点恢复，之后可重新绑定边缘主机。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
         <el-input
+          v-else
           v-model="content"
           type="textarea"
           :rows="14"
@@ -93,16 +144,16 @@ onMounted(loadOptions)
       <aside class="surface options-panel">
         <h2 class="section-title">导入选项</h2>
         <el-form label-position="top">
-          <el-form-item label="加入分组">
+          <el-form-item v-if="!backup" label="加入分组">
             <el-select v-model="groupIds" multiple clearable placeholder="不指定">
               <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="面板名称（可选）">
+          <el-form-item v-if="!backup" label="面板名称（可选）">
             <el-input v-model="namePrefix" clearable placeholder="例如：SBoard-日本" />
             <div class="field-note">导入后会作为节点名称前缀，便于识别来源面板。</div>
           </el-form-item>
-          <el-form-item label="添加标签">
+          <el-form-item v-if="!backup" label="添加标签">
             <el-select v-model="tagIds" multiple clearable placeholder="不指定">
               <el-option v-for="tag in tags" :key="tag.id" :label="tag.name" :value="tag.id" />
             </el-select>

@@ -37,7 +37,11 @@ function errorMessage(body: unknown, fallback: string): string {
   return fallback
 }
 
-export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  responseType: 'json' | 'blob' = 'json',
+): Promise<T> {
   const token = getAdminToken()
   const headers = new Headers(init.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -57,6 +61,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     throw new ApiError(response.status, errorMessage(body, `请求失败（${response.status}）`), body)
   }
   if (response.status === 204) return undefined as T
+  if (responseType === 'blob') return (await response.blob()) as T
   return (await response.json()) as T
 }
 

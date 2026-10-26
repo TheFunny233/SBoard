@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,7 +17,10 @@ from sboard.schemas import (
     validate_node_requirements,
 )
 from sboard.security import require_admin
+from sboard.services.node_backup import all_nodes, backup_nodes
 from sboard.services.state import node_online_status, node_to_read
+from sboard.services.subscriptions import share_link
+from sboard.services.xhttp import validate_xhttp_extra
 
 from .helpers import not_found, resolve_agent, resolve_groups, resolve_tags
 
@@ -84,9 +89,7 @@ def create_node(payload: NodeCreate, db: Session = Depends(get_db)) -> NodeRead:
 
 
 @router.delete("/batch", response_model=NodeBatchDeleteResult)
-def delete_nodes(
-    payload: NodeBatchDelete, db: Session = Depends(get_db)
-) -> NodeBatchDeleteResult:
+def delete_nodes(payload: NodeBatchDelete, db: Session = Depends(get_db)) -> NodeBatchDeleteResult:
     nodes = list(db.scalars(select(Node).where(Node.id.in_(payload.ids))).all())
     found_ids = {node.id for node in nodes}
     for node in nodes:
@@ -95,6 +98,45 @@ def delete_nodes(
     return NodeBatchDeleteResult(
         deleted=len(nodes),
         missing_ids=[node_id for node_id in payload.ids if node_id not in found_ids],
+    )
+
+
+@router.get("/export")
+def export_nodes(
+    format: Literal["json", "links"] = "json", db: Session = Depends(get_db)
+) -> Response:
+    if format == "json":
+        content = backup_nodes(db).model_dump_json(indent=2)
+        media_type = "application/json"
+        filename = "sboard-nodes.json"
+    else:
+        links = []
+        unsupported = []
+        for node in all_nodes(db):
+            link = share_link(node, node.name)
+            if link is None:
+                unsupported.append(node.name)
+            else:
+                links.append(link)
+        if unsupported:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "unsupported_share_links",
+                    "message": "以下节点无法导出为分享链接，请使用 JSON 备份："
+                    + "、".join(unsupported),
+                },
+            )
+        content = "\n".join(links)
+        media_type = "text/plain"
+        filename = "sboard-nodes.txt"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 
@@ -140,6 +182,10 @@ def update_node(node_id: str, payload: NodeUpdate, db: Session = Depends(get_db)
     final_cipher = changes.get("cipher", node.cipher)
     try:
         validate_node_requirements(final_protocol, final_uuid, final_password, final_cipher)
+        final_network = changes.get("network", node.network)
+        final_extra = extra if extra is not None else (node.extra_json or {})
+        if final_network == "xhttp" and "xhttp_extra" in final_extra:
+            validate_xhttp_extra(final_extra["xhttp_extra"])
     except ValueError as exc:
         raise HTTPException(
             status_code=422,

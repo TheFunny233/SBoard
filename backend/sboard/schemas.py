@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from sboard.services.xhttp import validate_xhttp_extra
+
 ProtocolName = Literal[
     "vless",
     "vmess",
@@ -133,6 +135,8 @@ class NodeFields(ApiModel):
         if self.source_type == "external" and self.agent_id:
             raise ValueError("external nodes cannot have agent_id")
         validate_node_requirements(self.protocol, self.uuid, self.password, self.cipher)
+        if self.network == "xhttp" and "xhttp_extra" in self.extra:
+            validate_xhttp_extra(self.extra["xhttp_extra"])
         return self
 
 
@@ -402,7 +406,7 @@ class TagRead(ApiModel):
 
 class ImportRequest(ApiModel):
     mode: Literal["preview", "commit"] = "preview"
-    links: list[str] = Field(min_length=1, max_length=500)
+    links: list[str] = Field(min_length=1)
     group_ids: list[str] = Field(default_factory=list)
     tag_ids: list[str] = Field(default_factory=list)
     duplicate_policy: Literal["skip", "create"] = "skip"
@@ -425,6 +429,42 @@ class ImportResult(ApiModel):
     created: int
     failed: int
     items: list[ImportItem]
+
+
+class BackupGroup(GroupCreate):
+    id: str
+
+
+class BackupTag(TagCreate):
+    id: str
+
+
+class NodeBackup(ApiModel):
+    format: Literal["sboard-nodes"] = "sboard-nodes"
+    version: Literal[1] = 1
+    nodes: list[NodeCreate]
+    groups: list[BackupGroup] = Field(default_factory=list)
+    tags: list[BackupTag] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_references(self) -> NodeBackup:
+        for field in ("groups", "tags"):
+            records = getattr(self, field)
+            ids = {record.id for record in records}
+            names = {record.name for record in records}
+            if len(ids) != len(records) or len(names) != len(records):
+                raise ValueError(f"duplicate {field} in backup")
+            for node in self.nodes:
+                references = node.group_ids if field == "groups" else node.tag_ids
+                if not set(references) <= ids:
+                    raise ValueError(f"missing {field} referenced by node {node.name}")
+        return self
+
+
+class BackupImportRequest(ApiModel):
+    backup: NodeBackup
+    mode: Literal["preview", "commit"] = "preview"
+    duplicate_policy: Literal["skip", "create"] = "skip"
 
 
 def validate_subscription_config(value: dict[str, Any]) -> dict[str, Any]:

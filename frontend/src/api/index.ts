@@ -38,6 +38,10 @@ export const api = {
 
   nodes: (params: Record<string, unknown> = {}) =>
     apiRequest<Paged<NodeRecord>>(withQuery('/api/v1/nodes', params)),
+  exportNodes: (format: 'json' | 'links') =>
+    apiRequest<Blob>(withQuery('/api/v1/nodes/export', { format }), {}, 'blob'),
+  importNodeBackup: (payload: Record<string, unknown>) =>
+    apiRequest<ImportResult>('/api/v1/nodes/import-backup', { method: 'POST', body: json(payload) }),
   createNode: (payload: NodePayload) =>
     apiRequest<NodeRecord>('/api/v1/nodes', { method: 'POST', body: json(payload) }),
   updateNode: (id: string, payload: Partial<NodePayload>) =>

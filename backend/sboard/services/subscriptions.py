@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from sboard.models import Group, Node, RuleSet, Subscription
+from sboard.services.xhttp import clash_xhttp_options
 
 GEOSITE_URL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
 
@@ -69,7 +70,9 @@ def _apply_transport(proxy: dict[str, Any], node: Node) -> None:
     if node.network in {None, "tcp"}:
         return
     proxy["network"] = node.network
-    if node.network == "ws":
+    if node.network == "xhttp":
+        proxy["xhttp-opts"] = clash_xhttp_options(node.path, node.host, node.extra_json or {})
+    elif node.network == "ws":
         ws: dict[str, Any] = {}
         if node.path:
             ws["path"] = node.path
@@ -361,7 +364,7 @@ def _endpoint_host(address: str) -> str:
     return f"[{address}]" if ":" in address and not address.startswith("[") else address
 
 
-def _share_link(node: Node, name: str) -> str | None:
+def share_link(node: Node, name: str) -> str | None:
     host = _endpoint_host(node.address)
     fragment = quote(name, safe="")
     extra = node.extra_json or {}
@@ -380,8 +383,16 @@ def _share_link(node: Node, name: str) -> str | None:
                 "path": node.path,
                 "host": node.host,
                 "serviceName": node.service_name,
+                "headerType": extra.get("header_type"),
             }
         )
+        if node.network == "xhttp":
+            if extra.get("xhttp_mode") is not None:
+                query["mode"] = extra["xhttp_mode"]
+            if extra.get("xhttp_extra") is not None:
+                query["extra"] = json.dumps(
+                    extra["xhttp_extra"], ensure_ascii=False, separators=(",", ":")
+                )
         return (
             f"vless://{quote(node.uuid, safe='')}@{host}:{node.port}?{urlencode(query)}#{fragment}"
         )
@@ -459,7 +470,7 @@ def generate_v2ray(db: Session, subscription: Subscription) -> GeneratedSubscrip
     included: list[str] = []
     warnings: list[str] = []
     for node in nodes:
-        link = _share_link(node, names[node.id])
+        link = share_link(node, names[node.id])
         if link is None:
             warnings.append(f"Node {node.name} ({node.id}) cannot be serialized as a share link")
             continue

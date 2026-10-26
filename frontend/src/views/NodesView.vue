@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Delete, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { Delete, Download, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
@@ -25,6 +25,7 @@ const protocols: NodeProtocol[] = [
 const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
+const exporting = ref(false)
 const groupSaving = ref(false)
 const nodes = ref<NodeRecord[]>([])
 const selectedNodes = ref<NodeRecord[]>([])
@@ -98,6 +99,26 @@ async function load(): Promise<void> {
     ElMessage.error(reason instanceof Error ? reason.message : '无法加载节点')
   } finally {
     loading.value = false
+  }
+}
+
+async function exportAll(format: 'json' | 'links' = 'json'): Promise<void> {
+  exporting.value = true
+  try {
+    const blob = await api.exportNodes(format)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `sboard-nodes-${new Date().toISOString().slice(0, 10)}.${format === 'json' ? 'json' : 'txt'}`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success('已导出全部节点（含停用节点）')
+  } catch (reason) {
+    ElMessage.error(reason instanceof Error ? reason.message : '导出失败')
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -310,6 +331,16 @@ onUnmounted(() => {
       <el-button :icon="Plus" @click="openGroupCreate()">新建分组</el-button>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
       <el-button @click="$router.push('/import')">批量导入</el-button>
+      <el-dropdown split-button :disabled="exporting" @click="exportAll()" @command="exportAll">
+        <el-icon><Download /></el-icon>
+        {{ exporting ? '正在导出' : '导出全部节点' }}
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="json">JSON 备份（保留参数、分组和标签）</el-dropdown-item>
+            <el-dropdown-item command="links">分享链接 TXT</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <el-button
         :icon="Delete"
         :disabled="!selectedNodes.length"
@@ -535,6 +566,7 @@ onUnmounted(() => {
                   <el-option label="tcp" value="tcp" />
                   <el-option label="ws" value="ws" />
                   <el-option label="grpc" value="grpc" />
+                  <el-option label="xhttp" value="xhttp" />
                   <el-option label="httpupgrade" value="httpupgrade" />
                 </el-select>
               </el-form-item>

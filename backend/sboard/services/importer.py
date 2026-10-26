@@ -5,6 +5,8 @@ import json
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from sboard.services.xhttp import validate_xhttp_extra
+
 
 class ImportParseError(ValueError):
     pass
@@ -83,6 +85,21 @@ def _parse_standard_uri(link: str, protocol: str) -> dict[str, Any]:
         }
     )
     node["extra"] = {key: value for key, value in node["extra"].items() if value}
+    if node["network"] == "xhttp":
+        mode = _first(query, "mode")
+        if mode:
+            node["extra"]["xhttp_mode"] = mode
+        raw_extra = _first(query, "extra")
+        if raw_extra:
+            try:
+                settings = json.loads(raw_extra)
+            except (ValueError, TypeError) as exc:
+                raise ImportParseError("invalid XHTTP extra JSON") from exc
+            try:
+                validate_xhttp_extra(settings)
+            except ValueError as exc:
+                raise ImportParseError(str(exc)) from exc
+            node["extra"]["xhttp_extra"] = settings
     return node
 
 
