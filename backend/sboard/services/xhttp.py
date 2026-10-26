@@ -118,5 +118,10 @@ def clash_xhttp_options(
                 reality,
                 {"publicKey": "public-key", "shortId": "short-id", "spiderX": "spider-x"},
             )
+            # A download reality-opts replaces the entire uplink object, so the
+            # compatibility flag must be copied here as well as on the uplink.
+            down["reality-opts"]["support-x25519mlkem768"] = extra.get(
+                "reality_support_x25519mlkem768", True
+            )
         options["download-settings"] = down
     return options

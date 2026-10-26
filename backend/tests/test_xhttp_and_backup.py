@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sboard.models import Node
 from sboard.schemas import NodeCreate
 from sboard.services.importer import parse_share_link
+from sboard.services.subscriptions import _clash_proxy
 from sboard.services.xhttp import clash_xhttp_options
 
 UUID = "11111111-1111-1111-1111-111111111111"
@@ -67,6 +68,7 @@ def test_xhttp_import_subscription_and_share_link_roundtrip(client, admin_header
     assert proxy["server"] == "192.0.2.1"
     assert proxy["port"] == 12811
     assert proxy["servername"] == "upload.example.com"
+    assert proxy["reality-opts"]["support-x25519mlkem768"] is True
     assert "flow" not in proxy
     assert proxy["xhttp-opts"] == {
         "path": "/v1/responses",
@@ -79,7 +81,11 @@ def test_xhttp_import_subscription_and_share_link_roundtrip(client, admin_header
             "path": "/v1/responses",
             "servername": "download.example.com",
             "client-fingerprint": "firefox",
-            "reality-opts": {"public-key": PUBLIC_KEY, "short-id": "9876543210abcdef"},
+            "reality-opts": {
+                "public-key": PUBLIC_KEY,
+                "short-id": "9876543210abcdef",
+                "support-x25519mlkem768": True,
+            },
         },
     }
     link = base64.b64decode(client.get(f"/subscribe/v2ray/{token}").text).decode()
@@ -118,6 +124,44 @@ def test_xhttp_download_inheritance_and_xmux():
     assert opts["no-grpc-header"] is False
     assert opts["reuse-settings"] == {"max-concurrency": "16-32", "h-keep-alive-period": 0}
     assert opts["download-settings"] == {"server": "down.example.com", "port": 443}
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_xhttp_mlkem_setting_applies_to_both_reality_connections(enabled):
+    payload = NodeCreate.model_validate(parse_share_link(xhttp_link()))
+    payload.extra["reality_support_x25519mlkem768"] = enabled
+    node = Node(
+        **payload.model_dump(exclude={"extra", "group_ids", "tag_ids"}),
+        extra_json=payload.extra,
+    )
+    proxy = _clash_proxy(node, "split")
+    assert proxy["reality-opts"]["support-x25519mlkem768"] is enabled
+    assert (
+        proxy["xhttp-opts"]["download-settings"]["reality-opts"]["support-x25519mlkem768"]
+        is enabled
+    )
+    # Other transports retain their existing handshake defaults.
+    node.network = "tcp"
+    proxy = _clash_proxy(node, "tcp")
+    assert "support-x25519mlkem768" not in proxy["reality-opts"]
+
+
+def test_xhttp_tls_download_does_not_enable_reality_mlkem():
+    opts = clash_xhttp_options(
+        "/up",
+        "up.example.com",
+        {
+            "xhttp_extra": {
+                "downloadSettings": {
+                    "address": "down.example.com",
+                    "security": "tls",
+                    "tlsSettings": {"serverName": "down.example.com"},
+                }
+            },
+        },
+    )
+    assert opts["download-settings"]["tls"] is True
+    assert opts["download-settings"]["reality-opts"] == {}
 
 
 def test_distinct_xhttp_downloads_are_not_skipped_as_duplicates(client, admin_headers):

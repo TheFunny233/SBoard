@@ -72,6 +72,8 @@ AI 优先于开发 / CDN / 娱乐分类。原混合规则的内容会保存在�
 
 XHTTP 分享链接中的 `mode` 和 `extra` 会被保留；Clash Meta 订阅会转换为 Mihomo 的 `xhttp-opts` / `download-settings`，V2Ray 订阅及 TXT 导出会保留原始 XHTTP 扩展参数。旧版导入时已经丢失的扩展参数无法自动恢复，请删除对应旧节点并重新导入原始链接，然后刷新客户端订阅。
 
+VLESS XHTTP + REALITY 订阅会默认在上下行的 `reality-opts` 中设置 `support-x25519mlkem768: true`，以兼容新版 Xray 服务端。若在 Mihomo 中出现 `REALITY authentication failed`、同一链接在 Xray 客户端却可用，请检查这两处是否都已开启。连接旧服务端需要关闭时，可在节点编辑的“TLS、Reality 与传输选项”中取消“新版 REALITY 兼容”；该设置也会保存在 JSON 备份中。已有完整 XHTTP 节点无需重新导入，更新服务后刷新客户端订阅即可。
+
 ## 本地开发
 
 ### 后端

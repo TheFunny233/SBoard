@@ -80,6 +80,10 @@ const needsPassword = computed(() =>
   ['trojan', 'ss', 'ss2022', 'hysteria2', 'tuic'].includes(form.value.protocol),
 )
 const needsCipher = computed(() => ['ss', 'ss2022'].includes(form.value.protocol))
+const realityMlkem = computed({
+  get: () => form.value.extra.reality_support_x25519mlkem768 !== false,
+  set: (value: boolean) => { form.value.extra.reality_support_x25519mlkem768 = value },
+})
 
 async function load(): Promise<void> {
   loading.value = true
@@ -581,6 +585,15 @@ onUnmounted(() => {
               </el-form-item>
               <el-form-item v-if="form.reality" label="Reality Short ID">
                 <el-input v-model="form.short_id" />
+              </el-form-item>
+              <el-form-item
+                v-if="form.protocol === 'vless' && form.reality && form.network === 'xhttp'"
+                label="新版 REALITY 兼容"
+              >
+                <div>
+                  <el-checkbox v-model="realityMlkem">启用 X25519MLKEM768</el-checkbox>
+                  <div class="field-note">默认开启，同时应用于上下行；连接旧版服务端时可关闭。</div>
+                </div>
               </el-form-item>
               <el-form-item label="Path">
                 <el-input v-model="form.path" />

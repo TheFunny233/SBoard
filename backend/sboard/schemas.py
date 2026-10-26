@@ -101,6 +101,13 @@ class AgentCreateResult(ApiModel):
     config: dict[str, Any]
 
 
+def validate_node_extra(value: dict[str, Any]) -> dict[str, Any]:
+    key = "reality_support_x25519mlkem768"
+    if key in value and not isinstance(value[key], bool):
+        raise ValueError(f"extra.{key} must be a boolean")
+    return value
+
+
 class NodeFields(ApiModel):
     source_type: SourceType
     agent_id: str | None = None
@@ -127,6 +134,11 @@ class NodeFields(ApiModel):
     extra: dict[str, Any] = Field(default_factory=dict)
     group_ids: list[str] = Field(default_factory=list)
     tag_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("extra")
+    @classmethod
+    def validate_extra(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_node_extra(value)
 
     @model_validator(mode="after")
     def validate_source(self) -> NodeFields:
@@ -170,6 +182,11 @@ class NodeUpdate(ApiModel):
     extra: dict[str, Any] | None = None
     group_ids: list[str] | None = None
     tag_ids: list[str] | None = None
+
+    @field_validator("extra")
+    @classmethod
+    def validate_extra(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return validate_node_extra(value) if value is not None else value
 
     @model_validator(mode="after")
     def reject_nulls(self) -> NodeUpdate:
