@@ -20,6 +20,11 @@ _XHTTP_FIELDS = {
     "sessionKey": "session-key",
     "sessionTable": "session-table",
     "sessionLength": "session-length",
+    # Current Xray names; retain the older aliases above for existing links.
+    "sessionIDPlacement": "session-placement",
+    "sessionIDKey": "session-key",
+    "sessionIDTable": "session-table",
+    "sessionIDLength": "session-length",
     "seqPlacement": "seq-placement",
     "seqKey": "seq-key",
     "uplinkDataPlacement": "uplink-data-placement",
@@ -38,10 +43,21 @@ _XMUX_FIELDS = {
 }
 
 
+def _transport_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(settings)
+    nested = normalized.pop("extra", {})
+    if not isinstance(nested, dict):
+        # Also used by Pydantic validators, which require ValueError.
+        raise ValueError("XHTTP transport extra must be an object")  # noqa: TRY004
+    normalized.update(nested)
+    return normalized
+
+
 def validate_xhttp_extra(settings: Any) -> None:
     if not isinstance(settings, dict):
         # Pydantic validators must raise ValueError to produce a validation response.
         raise ValueError("XHTTP extra must be a JSON object")  # noqa: TRY004
+    settings = _transport_settings(settings)
     for key in ("headers", "xmux", "downloadSettings"):
         if key in settings and not isinstance(settings[key], dict):
             raise ValueError(f"XHTTP {key} must be an object")
@@ -49,7 +65,7 @@ def validate_xhttp_extra(settings: Any) -> None:
     for key in ("xhttpSettings", "realitySettings", "tlsSettings"):
         if key in download and not isinstance(download[key], dict):
             raise ValueError(f"XHTTP downloadSettings.{key} must be an object")
-    transport = download.get("xhttpSettings", {})
+    transport = _transport_settings(download.get("xhttpSettings", {}))
     for key in ("headers", "xmux"):
         if key in transport and not isinstance(transport[key], dict):
             raise ValueError(f"XHTTP downloadSettings.xhttpSettings.{key} must be an object")
@@ -65,6 +81,7 @@ def _mapped(source: dict[str, Any], fields: dict[str, str]) -> dict[str, Any]:
 
 
 def _transport_options(settings: dict[str, Any]) -> dict[str, Any]:
+    settings = _transport_settings(settings)
     options = _mapped(settings, _XHTTP_FIELDS)
     xmux = settings.get("xmux")
     if isinstance(xmux, dict):
@@ -75,7 +92,7 @@ def _transport_options(settings: dict[str, Any]) -> dict[str, Any]:
 def clash_xhttp_options(
     path: str | None, host: str | None, extra: dict[str, Any]
 ) -> dict[str, Any]:
-    settings = extra.get("xhttp_extra") or {}
+    settings = _transport_settings(extra.get("xhttp_extra") or {})
     options = _transport_options(settings)
     for key, value in {"path": path, "host": host, "mode": extra.get("xhttp_mode")}.items():
         if value is not None:
@@ -94,11 +111,13 @@ def clash_xhttp_options(
         down.update(_mapped(download, {"address": "server", "port": "port"}))
         if "security" in download:
             down["tls"] = download["security"] in {"tls", "reality"}
-            # An explicitly non-Reality download must not inherit uplink Reality.
+            # An empty map fails Mihomo's required-field decoder. An explicit
+            # empty public key parses to nil and disables inherited REALITY.
             if download["security"] != "reality":
-                down["reality-opts"] = {}
-        tls = download.get("tlsSettings") or {}
-        reality = download.get("realitySettings") or {}
+                down["reality-opts"] = {"public-key": ""}
+        security = download.get("security")
+        tls = (download.get("tlsSettings") or {}) if security in {None, "tls"} else {}
+        reality = (download.get("realitySettings") or {}) if security in {None, "reality"} else {}
         down.update(
             _mapped(
                 tls,

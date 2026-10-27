@@ -1,5 +1,8 @@
 import base64
 import json
+import os
+import shutil
+import subprocess
 from urllib.parse import urlencode
 
 import pytest
@@ -31,7 +34,7 @@ DOWNLOAD = {
 }
 
 
-def xhttp_link(settings=None) -> str:  # type: ignore[no-untyped-def]
+def xhttp_link(settings=None, *, mode="auto", path="/v1/responses") -> str:  # type: ignore[no-untyped-def]
     query = {
         "encryption": "none",
         "security": "reality",
@@ -41,11 +44,170 @@ def xhttp_link(settings=None) -> str:  # type: ignore[no-untyped-def]
         "sid": "0123456789abcdef",
         "type": "xhttp",
         "host": "upload.example.com",
-        "path": "/v1/responses",
-        "mode": "auto",
+        "path": path,
+        "mode": mode,
         "extra": json.dumps(settings if settings is not None else {"downloadSettings": DOWNLOAD}),
     }
     return f"vless://{UUID}@192.0.2.1:12811?{urlencode(query)}#Split"
+
+
+def obfuscated_tls_settings():  # type: ignore[no-untyped-def]
+    padding = {
+        "xPaddingBytes": "24-80",
+        "xPaddingObfsMode": True,
+        "xPaddingHeader": "X-Request-ID",
+        "xPaddingPlacement": "header",
+        "xPaddingMethod": "tokenish",
+        "sessionIDPlacement": "header",
+        "sessionIDKey": "X-Correlation-ID",
+        "seqPlacement": "query",
+        "seqKey": "part",
+    }
+    return {
+        **padding,
+        "sessionIDTable": "Base62",
+        "sessionIDLength": "18-30",
+        "downloadSettings": {
+            "address": "cdn.example.com",
+            "port": 443,
+            "network": "xhttp",
+            "security": "tls",
+            "tlsSettings": {
+                "serverName": "cdn.example.com",
+                "allowInsecure": False,
+                "fingerprint": "chrome",
+                "alpn": ["h2"],
+            },
+            "xhttpSettings": {
+                "host": "cdn.example.com",
+                "path": "/v1/responses/stream",
+                "mode": "auto",
+                "extra": padding,
+            },
+        },
+    }
+
+
+def test_obfuscated_reality_uplink_tls_download_roundtrip(client, admin_headers):
+    settings = obfuscated_tls_settings()
+    link = xhttp_link(settings, mode="stream-up", path="/v1/responses/stream")
+    imported = client.post(
+        "/api/v1/nodes/import",
+        headers=admin_headers,
+        json={"mode": "commit", "links": [link]},
+    )
+    assert imported.json()["created"] == 1
+    token = client.post(
+        "/api/v1/subscriptions",
+        headers=admin_headers,
+        json={"name": "TLS-download"},
+    ).json()["token"]
+    proxy = yaml.safe_load(client.get(f"/subscribe/clash/{token}").text)["proxies"][0]
+    assert proxy["reality-opts"]["public-key"] == PUBLIC_KEY
+    opts = proxy["xhttp-opts"]
+    assert opts["mode"] == "stream-up"
+    assert opts["x-padding-bytes"] == "24-80"
+    assert opts["x-padding-obfs-mode"] is True
+    assert opts["x-padding-header"] == "X-Request-ID"
+    assert opts["x-padding-placement"] == "header"
+    assert opts["x-padding-method"] == "tokenish"
+    assert opts["session-placement"] == "header"
+    assert opts["session-key"] == "X-Correlation-ID"
+    assert opts["session-table"] == "Base62"
+    assert opts["session-length"] == "18-30"
+    assert opts["seq-placement"] == "query"
+    assert opts["seq-key"] == "part"
+    assert opts["download-settings"] == {
+        "host": "cdn.example.com",
+        "path": "/v1/responses/stream",
+        "server": "cdn.example.com",
+        "port": 443,
+        "tls": True,
+        "servername": "cdn.example.com",
+        "alpn": ["h2"],
+        "client-fingerprint": "chrome",
+        "skip-cert-verify": False,
+        "reality-opts": {"public-key": ""},
+    }
+    exported = client.get("/api/v1/nodes/export?format=links", headers=admin_headers).text
+    assert parse_share_link(exported) == parse_share_link(link)
+
+
+@pytest.mark.parametrize("security", ["tls", "none", "reality"])
+def test_explicit_download_security_does_not_apply_stale_other_settings(security):
+    settings = obfuscated_tls_settings()
+    settings["downloadSettings"].update(
+        security=security,
+        realitySettings=DOWNLOAD["realitySettings"],
+    )
+    down = clash_xhttp_options("/", "example.com", {"xhttp_extra": settings})["download-settings"]
+    assert down["tls"] is (security != "none")
+    if security == "reality":
+        assert down["reality-opts"]["public-key"] == PUBLIC_KEY
+        assert down["servername"] == "download.example.com"
+        assert "alpn" not in down
+    else:
+        assert down["reality-opts"] == {"public-key": ""}
+
+
+def test_nested_transport_extra_and_current_session_names():
+    opts = clash_xhttp_options(
+        "/",
+        "example.com",
+        {
+            "xhttp_extra": {
+                "sessionPlacement": "path",
+                "sessionIDPlacement": "header",
+                "downloadSettings": {
+                    "xhttpSettings": {
+                        "extra": {
+                            "headers": {"X-Test": "download"},
+                            "xmux": {"maxConcurrency": "4-8"},
+                        }
+                    }
+                },
+            }
+        },
+    )
+    assert opts["session-placement"] == "header"
+    assert opts["download-settings"] == {
+        "headers": {"X-Test": "download"},
+        "reuse-settings": {"max-concurrency": "4-8"},
+    }
+
+
+@pytest.mark.parametrize("security", ["tls", "none", "reality"])
+def test_generated_xhttp_config_loads_in_mihomo(tmp_path, security):
+    binary = os.environ.get("MIHOMO_BIN") or shutil.which("mihomo")
+    if not binary:
+        pytest.skip("Set MIHOMO_BIN to validate generated configs with the actual core")
+    settings = obfuscated_tls_settings()
+    settings["downloadSettings"].update(security=security)
+    if security == "reality":
+        settings["downloadSettings"]["realitySettings"] = DOWNLOAD["realitySettings"]
+    payload = NodeCreate.model_validate(
+        parse_share_link(xhttp_link(settings, mode="stream-up", path="/v1/responses/stream"))
+    )
+    proxy = _clash_proxy(
+        Node(
+            **payload.model_dump(exclude={"extra", "group_ids", "tag_ids"}),
+            extra_json=payload.extra,
+        ),
+        "core-test",
+    )
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        yaml.safe_dump({"proxies": [proxy], "rules": ["MATCH,core-test"]}), encoding="utf-8"
+    )
+    result = subprocess.run(
+        [binary, "-t", "-d", str(tmp_path), "-f", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_xhttp_import_subscription_and_share_link_roundtrip(client, admin_headers):
@@ -161,7 +323,7 @@ def test_xhttp_tls_download_does_not_enable_reality_mlkem():
         },
     )
     assert opts["download-settings"]["tls"] is True
-    assert opts["download-settings"]["reality-opts"] == {}
+    assert opts["download-settings"]["reality-opts"] == {"public-key": ""}
 
 
 def test_distinct_xhttp_downloads_are_not_skipped_as_duplicates(client, admin_headers):

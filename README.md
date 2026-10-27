@@ -74,6 +74,8 @@ XHTTP 分享链接中的 `mode` 和 `extra` 会被保留；Clash Meta 订阅会�
 
 VLESS XHTTP + REALITY 订阅会默认在上下行的 `reality-opts` 中设置 `support-x25519mlkem768: true`，以兼容新版 Xray 服务端。若在 Mihomo 中出现 `REALITY authentication failed`、同一链接在 Xray 客户端却可用，请检查这两处是否都已开启。连接旧服务端需要关闭时，可在节点编辑的“TLS、Reality 与传输选项”中取消“新版 REALITY 兼容”；该设置也会保存在 JSON 备份中。已有完整 XHTTP 节点无需重新导入，更新服务后刷新客户端订阅即可。
 
+同时支持 REALITY 上行搭配 TLS / CDN 下行：TLS 下行会用 `reality-opts: {public-key: ""}` 显式取消继承的 REALITY，并保留 TLS 证书校验设置。会话参数支持 Xray 的 `sessionIDPlacement`、`sessionIDKey`、`sessionIDTable`、`sessionIDLength` 及旧名称，并识别下行 `xhttpSettings.extra` 中可覆盖的传输选项。
+
 ## 本地开发
 
 ### 后端
@@ -174,6 +176,8 @@ docker compose logs --tail=100 sboard
 创建 Agent 后，响应只显示一次明文 Agent Token。管理员需要手动将 `server_url`、`node_id` 和 `token` 写入 SBoardNode 配置文件。
 
 ## 验证
+
+设置 `MIHOMO_BIN` 为本机 Mihomo 可执行文件的绝对路径后，后端测试还会调用实际内核校验生成的 XHTTP 配置，覆盖 REALITY 上行配合 TLS、明文和 REALITY 下行的场景；未设置且 PATH 中没有 Mihomo 时跳过这些检查。
 
 ```bash
 cd backend
