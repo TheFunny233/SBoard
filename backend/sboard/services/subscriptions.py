@@ -119,12 +119,11 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
                     "spider-x": extra.get("spider_x"),
                 }
             )
-            if node.network == "xhttp":
-                # Match modern Xray's Chrome handshake. Mihomo otherwise trims
-                # MLKEM, which recent REALITY servers may reject at authentication.
-                proxy["reality-opts"]["support-x25519mlkem768"] = extra.get(
-                    "reality_support_x25519mlkem768", True
-                )
+            # REALITY authentication precedes the transport/VLESS handshake.
+            # Modern Xray requires MLKEM-capable fingerprints for TCP/Vision too.
+            proxy["reality-opts"]["support-x25519mlkem768"] = extra.get(
+                "reality_support_x25519mlkem768", True
+            )
         _apply_transport(proxy, node)
         return proxy
 

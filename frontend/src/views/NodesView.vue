@@ -587,12 +587,12 @@ onUnmounted(() => {
                 <el-input v-model="form.short_id" />
               </el-form-item>
               <el-form-item
-                v-if="form.protocol === 'vless' && form.reality && form.network === 'xhttp'"
+                v-if="form.protocol === 'vless' && form.reality"
                 label="新版 REALITY 兼容"
               >
                 <div>
                   <el-checkbox v-model="realityMlkem">启用 X25519MLKEM768</el-checkbox>
-                  <div class="field-note">默认开启，同时应用于上下行；连接旧版服务端时可关闭。</div>
+                  <div class="field-note">默认开启，兼容新版 Xray；连接旧版服务端时可关闭。XHTTP 同时应用于 REALITY 下行。</div>
                 </div>
               </el-form-item>
               <el-form-item label="Path">

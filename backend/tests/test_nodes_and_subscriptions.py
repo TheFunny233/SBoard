@@ -102,6 +102,54 @@ def test_import_preserves_explicit_vless_flow(
     assert preview.json()["items"][0]["node"]["flow"] == "xtls-rprx-vision"
 
 
+def test_tcp_vision_reality_compatibility_and_legacy_override(
+    client: TestClient, admin_headers: dict[str, str], monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr("sboard.services.state.external_node_status", lambda _node: "unknown")
+    link = (
+        "vless://11111111-1111-1111-1111-111111111111@example.com:8443"
+        "?encryption=none&flow=xtls-rprx-vision&security=reality&sni=example.com"
+        "&fp=chrome&pbk=public-key&sid=9876543210abcdef&type=tcp"
+        "&headerType=none&host=example.com&path=%2Fv1%2Fresponses#Vision"
+    )
+    imported = client.post(
+        "/api/v1/nodes/import",
+        headers=admin_headers,
+        json={"mode": "commit", "links": [link]},
+    )
+    assert imported.json()["created"] == 1
+    node_id = imported.json()["items"][0]["node_id"]
+    token = client.post(
+        "/api/v1/subscriptions",
+        headers=admin_headers,
+        json={"name": "Vision"},
+    ).json()["token"]
+
+    def proxy():
+        return yaml.safe_load(client.get(f"/subscribe/clash/{token}").text)["proxies"][0]
+
+    generated = proxy()
+    assert generated["flow"] == "xtls-rprx-vision"
+    assert generated["client-fingerprint"] == "chrome"
+    assert generated["reality-opts"]["support-x25519mlkem768"] is True
+    assert "xhttp-opts" not in generated
+    assert "network" not in generated  # TCP is Mihomo's default.
+    disabled = client.patch(
+        f"/api/v1/nodes/{node_id}",
+        headers=admin_headers,
+        json={"extra": {"client_fingerprint": "chrome", "reality_support_x25519mlkem768": False}},
+    )
+    assert disabled.status_code == 200
+    assert proxy()["reality-opts"]["support-x25519mlkem768"] is False
+    tls_node = client.patch(
+        f"/api/v1/nodes/{node_id}",
+        headers=admin_headers,
+        json={"reality": False, "flow": None},
+    )
+    assert tls_node.status_code == 200
+    assert "reality-opts" not in proxy()
+
+
 def test_managed_node_uses_agent_status(client: TestClient, admin_headers: dict[str, str]) -> None:
     agent = client.post(
         "/api/v1/agents", headers=admin_headers, json={"name": "managed-host"}

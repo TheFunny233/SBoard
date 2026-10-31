@@ -302,10 +302,10 @@ def test_xhttp_mlkem_setting_applies_to_both_reality_connections(enabled):
         proxy["xhttp-opts"]["download-settings"]["reality-opts"]["support-x25519mlkem768"]
         is enabled
     )
-    # Other transports retain their existing handshake defaults.
+    # The override also applies when switching the same node to TCP.
     node.network = "tcp"
     proxy = _clash_proxy(node, "tcp")
-    assert "support-x25519mlkem768" not in proxy["reality-opts"]
+    assert proxy["reality-opts"]["support-x25519mlkem768"] is enabled
 
 
 def test_xhttp_tls_download_does_not_enable_reality_mlkem():
