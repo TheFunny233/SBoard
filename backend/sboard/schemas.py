@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from sboard.services.link_options import certificate_pin, validate_finalmask
 from sboard.services.xhttp import validate_xhttp_extra
 
 ProtocolName = Literal[
@@ -102,9 +103,31 @@ class AgentCreateResult(ApiModel):
 
 
 def validate_node_extra(value: dict[str, Any]) -> dict[str, Any]:
-    key = "reality_support_x25519mlkem768"
-    if key in value and not isinstance(value[key], bool):
-        raise ValueError(f"extra.{key} must be a boolean")
+    for key in ("reality_support_x25519mlkem768", "allow_insecure", "disable_sni", "reduce_rtt"):
+        if key in value and not isinstance(value[key], bool):
+            raise ValueError(f"extra.{key} must be a boolean")
+    if "finalmask" in value:
+        validate_finalmask(value["finalmask"])
+    if "certificate_pins" in value:
+        pins = value["certificate_pins"]
+        if not isinstance(pins, list) or any(not isinstance(pin, str) for pin in pins):
+            raise ValueError("extra.certificate_pins must be an array of SHA-256 fingerprints")
+        value = {**value, "certificate_pins": [certificate_pin(pin) for pin in pins]}
+    if "alpn" in value and (
+        not isinstance(value["alpn"], list)
+        or any(not isinstance(item, str) for item in value["alpn"])
+    ):
+        raise ValueError("extra.alpn must be an array of strings")
+    for key in ("share_params", "vmess_fields"):
+        if key in value and not isinstance(value[key], dict):
+            raise ValueError(f"extra.{key} must be an object")
+    if "share_params" in value and any(
+        not isinstance(items, list) or any(not isinstance(item, str) for item in items)
+        for items in value["share_params"].values()
+    ):
+        raise ValueError("extra.share_params values must be arrays of strings")
+    if "plugin_query" in value and not isinstance(value["plugin_query"], str):
+        raise ValueError("extra.plugin_query must be a string")
     return value
 
 

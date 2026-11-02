@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -21,7 +21,7 @@ from sboard.schemas import (
 )
 from sboard.security import generate_token, hash_token, require_admin, token_hint
 from sboard.services.state import subscription_to_read
-from sboard.services.subscriptions import generate_clash, generate_v2ray
+from sboard.services.subscriptions import generate_clash, generate_v2ray, selected_nodes
 
 from .helpers import not_found, resolve_groups, resolve_nodes, resolve_tags
 
@@ -224,6 +224,15 @@ def public_clash_subscription(
 ) -> Response:
     subscription = _public_subscription(db, token)
     generated = generate_clash(db, subscription)
+    if not generated.node_ids and selected_nodes(db, subscription):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "no_compatible_clash_nodes",
+                "message": "所选节点均无法转换为标准 Mihomo 配置，请查看订阅预览，或使用 V2Ray / Xray 订阅",
+                "warnings": generated.warnings,
+            },
+        )
     subscription.last_access_at = datetime.now(UTC)
     db.commit()
     return _subscription_response(

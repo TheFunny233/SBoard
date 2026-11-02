@@ -175,9 +175,26 @@ docker compose logs --tail=100 sboard
 
 创建 Agent 后，响应只显示一次明文 Agent Token。管理员需要手动将 `server_url`、`node_id` 和 `token` 写入 SBoardNode 配置文件。
 
+## 分享链接与客户端兼容性
+
+分享链接转换参考 [3x-ui 的订阅生成实现](https://github.com/MHSanaei/3x-ui/blob/master/internal/sub/service.go)、[Hysteria2 URI 规范](https://v2.hysteria.network/docs/developers/URI-Scheme/) 和 [Mihomo 配置源码](https://github.com/MetaCubeX/mihomo/tree/v1.19.32/adapter/outbound)。SBoard 能保留参数，但目标客户端仍须支持对应的握手，不能保证所有 Xray 配置都能转换为 Clash。
+
+| 协议 | 本次覆盖的导入、分享链接导出和 Clash 转换 |
+| --- | --- |
+| VLESS | TLS / REALITY、Flow、指纹、ALPN、单个证书 pin、TCP、WS、gRPC、HTTPUpgrade、HTTP / H2、分离式 XHTTP |
+| VMess | AEAD 参数、TLS、指纹、ALPN、TCP HTTP 头、WS、gRPC、HTTPUpgrade、HTTP / H2；XHTTP 参数保留在分享链接中 |
+| Trojan | 密码、TLS / REALITY、指纹、ALPN、TCP、WS、gRPC、HTTPUpgrade；XHTTP 参数保留在分享链接中 |
+| SS / SS2022 | Base64 和明文凭据、SIP002 的 obfs-local / v2ray-plugin 常用选项，插件原始参数随分享链接导出 |
+| Hysteria2 / hy2 | 完整 userpass、默认 443 端口、IPv6、证书 pin、ALPN、混淆、Gecko 包大小、端口范围、带宽 |
+| TUIC v5 | UUID / 密码、ALPN、证书 pin、拥塞控制、UDP relay、disable_sni / reduce_rtt |
+
+标准 Mihomo 1.19.31 / 1.19.32 没有 Xray 的 `fm` / FinalMask 握手。带该选项的链接仍可导入，完整参数随 V2Ray 订阅、TXT 和 JSON 备份导出；导入和订阅预览会显示兼容性提示，Clash 订阅排除该节点。服务端要求 `header-custom` 时，单删客户端链接中的 `fm` 无效；须在服务端关闭相应 FinalMask 并重新导出链接，或继续使用支持它的 Xray 客户端。未知分享参数、尚未转换的传输、多个证书 pin 和不支持的 SS 插件也会保留并提示，不会静默丢弃后输出另一种握手。订阅中全部节点均不兼容时，Clash 下载返回明确错误，保留客户端原有配置。
+
+节点编辑中的“协议扩展参数”可查看和修改已导入的扩展 JSON。WireGuard 目前仍为预留类型，只支持 JSON 备份，不生成分享链接或 Clash 节点。
+
 ## 验证
 
-设置 `MIHOMO_BIN` 为本机 Mihomo 可执行文件的绝对路径后，后端测试还会调用实际内核校验生成的 XHTTP 配置，覆盖 REALITY 上行配合 TLS、明文和 REALITY 下行的场景；未设置且 PATH 中没有 Mihomo 时跳过这些检查。
+设置 `MIHOMO_BIN` 为本机 Mihomo 可执行文件的绝对路径后，后端测试还会调用实际内核校验各协议和传输的配置，以及 REALITY 上行配合 TLS、明文和 REALITY 下行的 XHTTP 场景；未设置且 PATH 中没有 Mihomo 时跳过这些检查。配置校验不代表远端网络或鉴权一定成功。
 
 ```bash
 cd backend

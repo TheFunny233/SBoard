@@ -12,6 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from sboard.models import Group, Node, RuleSet, Subscription
+from sboard.services.link_options import (
+    clash_compatibility_issues,
+    share_extra_params,
+    ss_plugin_options,
+)
 from sboard.services.xhttp import clash_xhttp_options
 
 GEOSITE_URL = "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
@@ -67,33 +72,73 @@ def _compact(mapping: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply_transport(proxy: dict[str, Any], node: Node) -> None:
-    if node.network in {None, "tcp"}:
+    extra = node.extra_json or {}
+    network = {"raw": "tcp", "websocket": "ws"}.get(node.network, node.network)
+    if network in {None, "tcp"} and extra.get("header_type") == "http":
+        network = "http"
+    if network in {None, "tcp"}:
         return
-    proxy["network"] = node.network
-    if node.network == "xhttp":
+    proxy["network"] = network
+    if network == "xhttp":
         proxy["xhttp-opts"] = clash_xhttp_options(node.path, node.host, node.extra_json or {})
-    elif node.network == "ws":
+    elif network in {"ws", "httpupgrade"}:
         ws: dict[str, Any] = {}
         if node.path:
             ws["path"] = node.path
         if node.host:
             ws["headers"] = {"Host": node.host}
+        if network == "httpupgrade":
+            proxy["network"] = "ws"
+            ws["v2ray-http-upgrade"] = True
         if ws:
             proxy["ws-opts"] = ws
-    elif node.network == "grpc" and node.service_name:
-        proxy["grpc-opts"] = {"grpc-service-name": node.service_name}
-    elif node.network == "httpupgrade":
-        opts: dict[str, Any] = {}
-        if node.path:
-            opts["path"] = node.path
-        if node.host:
-            opts["host"] = node.host
-        if opts:
-            proxy["http-upgrade-opts"] = opts
+    elif network == "grpc" and (node.service_name or node.path):
+        proxy["grpc-opts"] = {"grpc-service-name": node.service_name or node.path}
+    elif network == "http":
+        proxy["http-opts"] = {
+            "path": [node.path or "/"],
+            **({"headers": {"Host": node.host.split(",")}} if node.host else {}),
+        }
+    elif network == "h2":
+        proxy["h2-opts"] = {
+            "path": node.path or "/",
+            **({"host": node.host.split(",")} if node.host else {}),
+        }
+
+
+def _apply_tls_options(proxy: dict[str, Any], node: Node) -> None:
+    extra = node.extra_json or {}
+    for source, target in {
+        "allow_insecure": "skip-cert-verify",
+        "alpn": "alpn",
+        "verify_cert_name": "name-cert-verify",
+    }.items():
+        if source in extra:
+            proxy[target] = extra[source]
+    if pins := extra.get("certificate_pins"):
+        proxy["fingerprint"] = pins[0]
+    if ech := extra.get("ech"):
+        proxy["ech-opts"] = {"enable": True, "config": ech}
+    if node.protocol in {"vless", "vmess", "trojan"}:
+        if extra.get("client_fingerprint"):
+            proxy["client-fingerprint"] = extra["client_fingerprint"]
+        # Legacy imports used reality=True even on non-REALITY protocols.
+        if node.reality and (node.protocol == "vless" or node.public_key):
+            proxy.setdefault("client-fingerprint", "chrome")
+            proxy["reality-opts"] = _compact(
+                {
+                    "public-key": node.public_key,
+                    "short-id": node.short_id,
+                    "spider-x": extra.get("spider_x"),
+                    "support-x25519mlkem768": extra.get("reality_support_x25519mlkem768", True),
+                }
+            )
 
 
 def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
     extra = node.extra_json or {}
+    if clash_compatibility_issues(node.protocol, node.network, extra, node.security):
+        return None
     common = {"name": name, "server": node.address, "port": node.port}
 
     if node.protocol == "vless":
@@ -106,24 +151,13 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
                 "tls": node.tls,
                 "servername": node.sni,
                 "flow": node.flow,
+                "encryption": extra.get("encryption"),
                 "client-fingerprint": extra.get("client_fingerprint", "chrome")
                 if node.reality
                 else extra.get("client_fingerprint"),
             }
         )
-        if node.reality:
-            proxy["reality-opts"] = _compact(
-                {
-                    "public-key": node.public_key,
-                    "short-id": node.short_id,
-                    "spider-x": extra.get("spider_x"),
-                }
-            )
-            # REALITY authentication precedes the transport/VLESS handshake.
-            # Modern Xray requires MLKEM-capable fingerprints for TCP/Vision too.
-            proxy["reality-opts"]["support-x25519mlkem768"] = extra.get(
-                "reality_support_x25519mlkem768", True
-            )
+        _apply_tls_options(proxy, node)
         _apply_transport(proxy, node)
         return proxy
 
@@ -140,6 +174,7 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
                 "servername": node.sni,
             }
         )
+        _apply_tls_options(proxy, node)
         _apply_transport(proxy, node)
         return proxy
 
@@ -154,6 +189,7 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
                 "skip-cert-verify": bool(extra.get("allow_insecure", False)),
             }
         )
+        _apply_tls_options(proxy, node)
         _apply_transport(proxy, node)
         return proxy
 
@@ -165,11 +201,12 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
                 "cipher": node.cipher,
                 "password": node.password,
                 "udp": True,
+                **ss_plugin_options(extra),
             }
         )
 
     if node.protocol == "hysteria2":
-        return _compact(
+        proxy = _compact(
             {
                 **common,
                 "type": "hysteria2",
@@ -178,11 +215,25 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
                 "skip-cert-verify": bool(extra.get("allow_insecure", False)),
                 "obfs": extra.get("obfs"),
                 "obfs-password": extra.get("obfs_password"),
+                **{
+                    target: extra[source]
+                    for source, target in {
+                        "ports": "ports",
+                        "hop_interval": "hop-interval",
+                        "up": "up",
+                        "down": "down",
+                        "obfs_min_packet_size": "obfs-min-packet-size",
+                        "obfs_max_packet_size": "obfs-max-packet-size",
+                    }.items()
+                    if source in extra
+                },
             }
         )
+        _apply_tls_options(proxy, node)
+        return proxy
 
     if node.protocol == "tuic":
-        return _compact(
+        proxy = _compact(
             {
                 **common,
                 "type": "tuic",
@@ -192,8 +243,12 @@ def _clash_proxy(node: Node, name: str) -> dict[str, Any] | None:
                 "udp-relay-mode": extra.get("udp_relay_mode", "native"),
                 "congestion-controller": extra.get("congestion_controller", "bbr"),
                 "skip-cert-verify": bool(extra.get("allow_insecure", False)),
+                "disable-sni": extra.get("disable_sni"),
+                "reduce-rtt": extra.get("reduce_rtt"),
             }
         )
+        _apply_tls_options(proxy, node)
+        return proxy
     return None
 
 
@@ -305,6 +360,12 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
     proxy_names: list[str] = []
 
     for node in nodes:
+        issues = clash_compatibility_issues(
+            node.protocol, node.network, node.extra_json or {}, node.security
+        )
+        if issues:
+            warnings.extend(f"节点 {node.name} 已从 Clash 订阅排除：{issue}" for issue in issues)
+            continue
         proxy = _clash_proxy(node, names[node.id])
         if proxy is None:
             warnings.append(
@@ -358,6 +419,10 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
             }
         )
     content = yaml.safe_dump(document, allow_unicode=True, sort_keys=False, width=4096)
+    if warnings:
+        # Public subscriptions also expose compatibility warnings, as YAML comments.
+        comments = "\n".join(f"# {line}" for warning in warnings for line in warning.splitlines())
+        content = comments + "\n" + content
     return GeneratedSubscription(content=content, node_ids=included, warnings=warnings)
 
 
@@ -369,6 +434,43 @@ def _endpoint_host(address: str) -> str:
     return f"[{address}]" if ":" in address and not address.startswith("[") else address
 
 
+def _share_security(node: Node) -> str:
+    if node.security not in {None, "", "none", "tls", "reality"}:
+        return node.security
+    reality = node.reality and (node.protocol == "vless" or node.public_key)
+    return "reality" if reality else ("tls" if node.tls else "none")
+
+
+def _tls_share_params(node: Node) -> dict[str, Any]:
+    extra = node.extra_json or {}
+    params = share_extra_params(extra)
+    params.update(
+        _compact(
+            {
+                "fp": extra.get("client_fingerprint"),
+                "alpn": ",".join(extra["alpn"]) if extra.get("alpn") else None,
+                "allowInsecure": "1" if extra.get("allow_insecure") else None,
+                "ech": extra.get("ech"),
+                "vcn": extra.get("verify_cert_name"),
+                "pcs": ",".join(
+                    base64.b64encode(bytes.fromhex(pin)).decode("ascii")
+                    for pin in extra["certificate_pins"]
+                )
+                if extra.get("certificate_pins")
+                else None,
+            }
+        )
+    )
+    if node.network == "xhttp":
+        if extra.get("xhttp_mode") is not None:
+            params["mode"] = extra["xhttp_mode"]
+        if extra.get("xhttp_extra") is not None:
+            params["extra"] = json.dumps(
+                extra["xhttp_extra"], ensure_ascii=False, separators=(",", ":")
+            )
+    return params
+
+
 def share_link(node: Node, name: str) -> str | None:
     host = _endpoint_host(node.address)
     fragment = quote(name, safe="")
@@ -377,12 +479,13 @@ def share_link(node: Node, name: str) -> str | None:
     if node.protocol == "vless" and node.uuid:
         query = _compact(
             {
+                **_tls_share_params(node),
                 "type": node.network or "tcp",
-                "security": "reality" if node.reality else ("tls" if node.tls else "none"),
+                "encryption": extra.get("encryption", "none"),
+                "security": _share_security(node),
                 "sni": node.sni,
                 "pbk": node.public_key if node.reality else None,
                 "sid": node.short_id if node.reality else None,
-                "fp": extra.get("client_fingerprint") if node.reality else None,
                 "spx": extra.get("spider_x") if node.reality else None,
                 "flow": node.flow,
                 "path": node.path,
@@ -391,19 +494,12 @@ def share_link(node: Node, name: str) -> str | None:
                 "headerType": extra.get("header_type"),
             }
         )
-        if node.network == "xhttp":
-            if extra.get("xhttp_mode") is not None:
-                query["mode"] = extra["xhttp_mode"]
-            if extra.get("xhttp_extra") is not None:
-                query["extra"] = json.dumps(
-                    extra["xhttp_extra"], ensure_ascii=False, separators=(",", ":")
-                )
-        return (
-            f"vless://{quote(node.uuid, safe='')}@{host}:{node.port}?{urlencode(query)}#{fragment}"
-        )
+        return f"vless://{quote(node.uuid, safe='')}@{host}:{node.port}?{urlencode(query, doseq=True)}#{fragment}"
 
     if node.protocol == "vmess" and node.uuid:
         payload = {
+            **extra.get("vmess_fields", {}),
+            **_tls_share_params(node),
             "v": "2",
             "ps": name,
             "add": node.address,
@@ -412,7 +508,7 @@ def share_link(node: Node, name: str) -> str | None:
             "aid": str(extra.get("alter_id", 0)),
             "scy": str(extra.get("cipher", "auto")),
             "net": node.network or "tcp",
-            "type": "none",
+            "type": extra.get("header_type", "none"),
             "host": node.host or "",
             "path": node.service_name if node.network == "grpc" else (node.path or ""),
             "tls": "tls" if node.tls else "",
@@ -426,7 +522,11 @@ def share_link(node: Node, name: str) -> str | None:
     if node.protocol == "trojan" and node.password:
         query = _compact(
             {
-                "security": "tls" if node.tls else "none",
+                **_tls_share_params(node),
+                "security": _share_security(node),
+                "pbk": node.public_key if node.reality else None,
+                "sid": node.short_id if node.reality else None,
+                "spx": extra.get("spider_x") if node.reality else None,
                 "sni": node.sni,
                 "type": node.network or "tcp",
                 "path": node.path,
@@ -435,35 +535,52 @@ def share_link(node: Node, name: str) -> str | None:
                 "allowInsecure": "1" if extra.get("allow_insecure") else None,
             }
         )
-        return f"trojan://{quote(node.password, safe='')}@{host}:{node.port}?{urlencode(query)}#{fragment}"
+        return f"trojan://{quote(node.password, safe='')}@{host}:{node.port}?{urlencode(query, doseq=True)}#{fragment}"
 
     if node.protocol in {"ss", "ss2022"} and node.cipher and node.password:
         credentials = _b64_url(f"{node.cipher}:{node.password}".encode())
-        return f"ss://{credentials}@{host}:{node.port}#{fragment}"
+        query_string = extra.get("plugin_query")
+        query_suffix = f"?{query_string}" if query_string else ""
+        return f"ss://{credentials}@{host}:{node.port}{query_suffix}#{fragment}"
 
     if node.protocol == "hysteria2" and node.password:
         query = _compact(
             {
+                **_tls_share_params(node),
                 "sni": node.sni,
                 "insecure": "1" if extra.get("allow_insecure") else None,
                 "obfs": extra.get("obfs"),
                 "obfs-password": extra.get("obfs_password"),
+                "pinSHA256": ",".join(extra["certificate_pins"])
+                if extra.get("certificate_pins")
+                else None,
+                "hopInterval": extra.get("hop_interval"),
+                "up": extra.get("up"),
+                "down": extra.get("down"),
+                "minPacketSize": extra.get("obfs_min_packet_size"),
+                "maxPacketSize": extra.get("obfs_max_packet_size"),
             }
         )
-        return f"hysteria2://{quote(node.password, safe='')}@{host}:{node.port}?{urlencode(query)}#{fragment}"
+        query.pop("pcs", None)
+        query.pop("allowInsecure", None)
+        ports = extra.get("ports") or node.port
+        return f"hysteria2://{quote(node.password, safe='')}@{host}:{ports}?{urlencode(query, doseq=True)}#{fragment}"
 
     if node.protocol == "tuic" and node.uuid and node.password:
         query = _compact(
             {
+                **_tls_share_params(node),
                 "sni": node.sni,
                 "congestion_control": extra.get("congestion_controller"),
                 "udp_relay_mode": extra.get("udp_relay_mode"),
                 "allow_insecure": "1" if extra.get("allow_insecure") else None,
+                "disable_sni": "1" if extra.get("disable_sni") else None,
+                "reduce_rtt": "1" if extra.get("reduce_rtt") else None,
             }
         )
         return (
             f"tuic://{quote(node.uuid, safe='')}:{quote(node.password, safe='')}"
-            f"@{host}:{node.port}?{urlencode(query)}#{fragment}"
+            f"@{host}:{node.port}?{urlencode(query, doseq=True)}#{fragment}"
         )
     return None
 

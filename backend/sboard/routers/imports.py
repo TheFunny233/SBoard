@@ -14,6 +14,7 @@ from sboard.models import Group, Node, Tag
 from sboard.schemas import BackupImportRequest, ImportItem, ImportRequest, ImportResult, NodeCreate
 from sboard.security import require_admin
 from sboard.services.importer import ImportParseError, parse_share_link
+from sboard.services.link_options import clash_compatibility_issues
 
 from .helpers import resolve_groups, resolve_tags
 
@@ -49,6 +50,8 @@ def import_backup(payload: BackupImportRequest, db: Session = Depends(get_db)) -
         if node.source_type == "managed":
             data.update(source_type="external", agent_id=None)
             warning = "托管节点作为外部节点恢复；请在新面板重新绑定边缘主机"
+        issues = clash_compatibility_issues(node.protocol, node.network, node.extra, node.security)
+        warning = "；".join(filter(None, [warning, *issues])) or None
         items.append(ImportItem(index=index, status="valid", node=data, warning=warning))
     if payload.mode == "preview":
         return ImportResult(mode=payload.mode, total=len(items), created=0, failed=0, items=items)
@@ -111,7 +114,20 @@ def import_nodes(payload: ImportRequest, db: Session = Depends(get_db)) -> Impor
             parsed["tag_ids"] = payload.tag_ids
             node_payload = NodeCreate.model_validate(parsed)
             valid.append((index, node_payload))
-            items.append(ImportItem(index=index, status="valid", node=node_payload.model_dump()))
+            issues = clash_compatibility_issues(
+                node_payload.protocol,
+                node_payload.network,
+                node_payload.extra,
+                node_payload.security,
+            )
+            items.append(
+                ImportItem(
+                    index=index,
+                    status="valid",
+                    node=node_payload.model_dump(),
+                    warning="；".join(issues) or None,
+                )
+            )
         except (ImportParseError, ValidationError, ValueError) as exc:
             items.append(ImportItem(index=index, status="error", error=str(exc)))
 

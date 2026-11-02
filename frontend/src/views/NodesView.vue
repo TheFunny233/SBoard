@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Delete, Download, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { api } from '../api'
 import EmptyState from '../components/EmptyState.vue'
@@ -75,6 +75,10 @@ function emptyNode(): NodePayload {
 }
 
 const form = ref<NodePayload>(emptyNode())
+const extraOptions = ref('{}')
+watch(() => form.value.extra, (extra) => {
+  extraOptions.value = JSON.stringify(extra, null, 2)
+}, { deep: true, immediate: true })
 const needsUuid = computed(() => ['vless', 'vmess', 'tuic'].includes(form.value.protocol))
 const needsPassword = computed(() =>
   ['trojan', 'ss', 'ss2022', 'hysteria2', 'tuic'].includes(form.value.protocol),
@@ -149,6 +153,11 @@ function openEdit(node: NodeRecord): void {
 
 function normalizePayload(): NodePayload {
   const payload = JSON.parse(JSON.stringify(form.value)) as NodePayload
+  const extra: unknown = JSON.parse(extraOptions.value)
+  if (!extra || typeof extra !== 'object' || Array.isArray(extra)) {
+    throw new Error('扩展参数必须是 JSON 对象')
+  }
+  payload.extra = extra as NodePayload['extra']
   payload.agent_id = payload.source_type === 'managed' ? payload.agent_id : null
   for (const key of [
     'uuid',
@@ -572,6 +581,8 @@ onUnmounted(() => {
                   <el-option label="grpc" value="grpc" />
                   <el-option label="xhttp" value="xhttp" />
                   <el-option label="httpupgrade" value="httpupgrade" />
+                  <el-option label="http" value="http" />
+                  <el-option label="h2" value="h2" />
                 </el-select>
               </el-form-item>
               <el-form-item label="SNI">
@@ -605,6 +616,10 @@ onUnmounted(() => {
                 <el-input v-model="form.service_name" />
               </el-form-item>
             </div>
+          </el-collapse-item>
+          <el-collapse-item title="协议扩展参数" name="extra">
+            <p class="field-note">导入链接中的证书指纹、ALPN、混淆、端口跳跃、XHTTP 和 FinalMask 参数保存在这里。部分 Xray 扩展无法转换为标准 Mihomo 配置，导入和订阅预览会提示。</p>
+            <el-input v-model="extraOptions" type="textarea" :rows="12" spellcheck="false" />
           </el-collapse-item>
         </el-collapse>
 
