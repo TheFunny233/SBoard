@@ -17,6 +17,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -160,6 +161,8 @@ class Node(TimestampMixin, Base):
     host: Mapped[str | None] = mapped_column(String(255))
     service_name: Mapped[str | None] = mapped_column(String(255))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    include_in_main_group: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    include_in_auto_group: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     extra_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 

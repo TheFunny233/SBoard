@@ -357,7 +357,8 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
     proxies: list[dict[str, Any]] = []
     included: list[str] = []
     warnings: list[str] = []
-    proxy_names: list[str] = []
+    main_members: list[str] = []
+    auto_members: list[str] = []
 
     for node in nodes:
         issues = clash_compatibility_issues(
@@ -373,31 +374,34 @@ def generate_clash(db: Session, subscription: Subscription) -> GeneratedSubscrip
             )
             continue
         proxies.append(proxy)
-        proxy_names.append(names[node.id])
         included.append(node.id)
+        if node.include_in_main_group:
+            main_members.append(names[node.id])
+        if node.include_in_auto_group:
+            auto_members.append(names[node.id])
 
     test_url = str(config.get("test_url") or "https://www.gstatic.com/generate_204")
     interval = int(config.get("test_interval") or 300)
-    include_auto = bool(config.get("include_auto", True))
+    include_auto = bool(config.get("include_auto", True)) and bool(auto_members)
 
-    proxy_groups: list[dict[str, Any]] = []
-    if proxy_names:
-        choices = ([auto_group_name] if include_auto else []) + proxy_names + ["DIRECT"]
-        proxy_groups.append({"name": group_name, "type": "select", "proxies": choices})
-        if include_auto:
-            proxy_groups.append(
-                {
-                    "name": auto_group_name,
-                    "type": "url-test",
-                    "proxies": proxy_names,
-                    "url": test_url,
-                    "interval": interval,
-                }
-            )
-    else:
-        proxy_groups.append({"name": group_name, "type": "select", "proxies": ["DIRECT"]})
+    choices = ([auto_group_name] if include_auto else []) + main_members + ["DIRECT"]
+    proxy_groups: list[dict[str, Any]] = [
+        {"name": group_name, "type": "select", "proxies": choices}
+    ]
+    if include_auto:
+        proxy_groups.append(
+            {
+                "name": auto_group_name,
+                "type": "url-test",
+                "proxies": auto_members,
+                "url": test_url,
+                "interval": interval,
+            }
+        )
 
-    used_names = set(proxy_names) | {group_name, auto_group_name, "DIRECT", "REJECT"}
+    used_names = {names[node_id] for node_id in included} | {
+        group_name, auto_group_name, "DIRECT", "REJECT"
+    }
     managed_rules, rule_warnings, routing_groups = _managed_rules(
         db, set(included), names, used_names, group_name
     )

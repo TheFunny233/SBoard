@@ -86,6 +86,8 @@ export interface NodeRecord {
   host: string | null
   service_name: string | null
   enabled: boolean
+  include_in_main_group: boolean
+  include_in_auto_group: boolean
   sort_order: number
   extra: Record<string, unknown>
   group_ids: string[]
@@ -117,6 +119,8 @@ export interface NodePayload {
   host?: string | null
   service_name?: string | null
   enabled: boolean
+  include_in_main_group: boolean
+  include_in_auto_group: boolean
   sort_order: number
   extra: Record<string, unknown>
   group_ids: string[]

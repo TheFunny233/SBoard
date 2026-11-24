@@ -49,7 +49,13 @@ def init_db() -> None:
         subscription_columns = {column["name"] for column in inspector.get_columns("subscriptions")}
         rule_columns = {column["name"] for column in inspector.get_columns("rule_sets")}
         group_columns = {column["name"] for column in inspector.get_columns("groups")}
+        node_columns = {column["name"] for column in inspector.get_columns("nodes")}
         with engine.begin() as connection:
+            for name in ("include_in_main_group", "include_in_auto_group"):
+                if name not in node_columns:
+                    connection.execute(
+                        text(f"ALTER TABLE nodes ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT 1")
+                    )
             group_additions = {
                 "strategy": "VARCHAR(20) NOT NULL DEFAULT 'select'",
                 "test_url": "VARCHAR(2048) NOT NULL DEFAULT 'https://www.gstatic.com/generate_204'",

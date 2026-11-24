@@ -373,7 +373,14 @@ def test_export_and_restore_node_backup(client: TestClient, admin_headers):
         },
     ).json()
     node = parse_share_link(xhttp_link())
-    node.update(enabled=False, sort_order=42, group_ids=[group["id"]], tag_ids=[tag["id"]])
+    node.update(
+        enabled=False,
+        include_in_main_group=False,
+        include_in_auto_group=False,
+        sort_order=42,
+        group_ids=[group["id"]],
+        tag_ids=[tag["id"]],
+    )
     created = client.post("/api/v1/nodes", headers=admin_headers, json=node)
     assert created.status_code == 201
     exported = client.get("/api/v1/nodes/export", headers=admin_headers)

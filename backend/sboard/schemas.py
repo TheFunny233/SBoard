@@ -153,6 +153,8 @@ class NodeFields(ApiModel):
     host: str | None = Field(default=None, max_length=255)
     service_name: str | None = Field(default=None, max_length=255)
     enabled: bool = True
+    include_in_main_group: bool = True
+    include_in_auto_group: bool = True
     sort_order: int = 0
     extra: dict[str, Any] = Field(default_factory=dict)
     group_ids: list[str] = Field(default_factory=list)
@@ -201,6 +203,8 @@ class NodeUpdate(ApiModel):
     host: str | None = Field(default=None, max_length=255)
     service_name: str | None = Field(default=None, max_length=255)
     enabled: bool | None = None
+    include_in_main_group: bool | None = None
+    include_in_auto_group: bool | None = None
     sort_order: int | None = None
     extra: dict[str, Any] | None = None
     group_ids: list[str] | None = None
@@ -222,6 +226,8 @@ class NodeUpdate(ApiModel):
             "tls",
             "reality",
             "enabled",
+            "include_in_main_group",
+            "include_in_auto_group",
             "sort_order",
             "extra",
             "group_ids",

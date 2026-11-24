@@ -67,6 +67,8 @@ function emptyNode(): NodePayload {
     host: '',
     service_name: '',
     enabled: true,
+    include_in_main_group: true,
+    include_in_auto_group: true,
     sort_order: 0,
     extra: {},
     group_ids: [],
@@ -548,7 +550,16 @@ onUnmounted(() => {
           <el-form-item v-if="needsCipher" label="加密方法" required>
             <el-input v-model="form.cipher" placeholder="例如：aes-128-gcm" />
           </el-form-item>
-          <el-form-item label="分组">
+          <el-form-item label="Clash 默认分组" class="wide-field">
+            <div>
+              <div class="switches">
+                <el-checkbox v-model="form.include_in_main_group">主选择组</el-checkbox>
+                <el-checkbox v-model="form.include_in_auto_group">自动测速组（Auto）</el-checkbox>
+              </div>
+              <div class="field-note">仅用于自定义分组时，取消这两项，再在下方选择分组。</div>
+            </div>
+          </el-form-item>
+          <el-form-item label="自定义分组">
             <el-select v-model="form.group_ids" multiple clearable placeholder="可选">
               <el-option v-for="group in groups" :key="group.id" :label="group.name" :value="group.id" />
               <template #footer>

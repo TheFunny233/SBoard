@@ -101,6 +101,8 @@ def node_to_read(node: Node) -> NodeRead:
         host=node.host,
         service_name=node.service_name,
         enabled=node.enabled,
+        include_in_main_group=node.include_in_main_group,
+        include_in_auto_group=node.include_in_auto_group,
         sort_order=node.sort_order,
         extra=node.extra_json or {},
         group_ids=[group.id for group in node.groups],

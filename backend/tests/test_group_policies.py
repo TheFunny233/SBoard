@@ -140,6 +140,59 @@ def test_independent_groups_manual_rules_and_node_toggle(client, admin_headers):
     assert next(p for p in document["proxy-groups"] if p["name"] == "AI")["proxies"] == ["Clean"]
 
 
+def test_node_membership_in_default_clash_groups(client, admin_headers):  # type: ignore[no-untyped-def]
+    ai = group(client, admin_headers, "AI", strategy="url-test")
+    ai_node = node(client, admin_headers, "AI only", [ai["id"]])
+    general_node = node(client, admin_headers, "General", [])
+    result = client.post(
+        "/api/v1/rules",
+        headers=admin_headers,
+        json={
+            "name": "AI route",
+            "target_mode": "group",
+            "group_id": ai["id"],
+            "rules": ["DOMAIN-SUFFIX,chatgpt.com"],
+        },
+    )
+    assert result.status_code == 201
+    sub_result = client.post(
+        "/api/v1/subscriptions",
+        headers=admin_headers,
+        json={"name": "Default groups", "config": {"group_name": "节点选择"}},
+    ).json()
+    url = f"/subscribe/clash/{sub_result['token']}"
+    initial = client.get(url)
+    initial_groups = yaml.safe_load(initial.text)["proxy-groups"]
+    assert initial_groups[0]["proxies"] == ["Auto", "AI only", "General", "DIRECT"]
+    assert initial_groups[1]["proxies"] == ["AI only", "General"]
+
+    def update_membership(node_id, changes):  # type: ignore[no-untyped-def]
+        response = client.patch(f"/api/v1/nodes/{node_id}", headers=admin_headers, json=changes)
+        assert response.status_code == 200, response.text
+        updated = response.json()
+        assert all(updated[key] == value for key, value in changes.items())
+
+    update_membership(ai_node["id"], {"include_in_main_group": False})
+    update_membership(general_node["id"], {"include_in_auto_group": False})
+    _, document = preview(client, admin_headers, sub_result["subscription"])
+    assert {item["name"]: item["proxies"] for item in document["proxy-groups"]} == {
+        "节点选择": ["Auto", "General", "DIRECT"],
+        "Auto": ["AI only"],
+        "AI": ["AI only"],
+    }
+
+    update_membership(ai_node["id"], {"include_in_auto_group": False})
+    public = client.get(url, headers={"If-None-Match": initial.headers["etag"]})
+    assert public.status_code == 200
+    assert public.headers["etag"] != initial.headers["etag"]
+    document = yaml.safe_load(public.text)
+    assert {item["name"]: item["proxies"] for item in document["proxy-groups"]} == {
+        "节点选择": ["General", "DIRECT"],
+        "AI": ["AI only"],
+    }
+    assert [proxy["name"] for proxy in document["proxies"]] == ["AI only", "General"]
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -237,6 +290,8 @@ def test_existing_sqlite_database_migrates_idempotently(tmp_path, monkeypatch): 
             )
         )
         connection.execute(text("CREATE TABLE rule_sets (id VARCHAR(36) PRIMARY KEY)"))
+        connection.execute(text("CREATE TABLE nodes (id VARCHAR(36) PRIMARY KEY)"))
+        connection.execute(text("INSERT INTO nodes (id) VALUES ('legacy-node')"))
     monkeypatch.setattr(database, "engine", engine)
     database.init_db()
     database.init_db()
@@ -248,6 +303,10 @@ def test_existing_sqlite_database_migrates_idempotently(tmp_path, monkeypatch): 
         assert row["test_interval"] == 300
         assert row["test_tolerance"] == 50
         assert row["test_url"] == "https://www.gstatic.com/generate_204"
+        node_defaults = connection.execute(
+            text("SELECT include_in_main_group, include_in_auto_group FROM nodes")
+        ).one()
+        assert node_defaults == (True, True)
     assert {column["name"] for column in inspect(engine).get_columns("rule_sets")} >= {
         "template_key",
         "group_id",
